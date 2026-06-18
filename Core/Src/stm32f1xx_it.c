@@ -56,6 +56,11 @@
 
 /* External variables --------------------------------------------------------*/
 extern PCD_HandleTypeDef hpcd_USB_FS;
+extern DMA_HandleTypeDef hdma_dac_ch1;
+extern DMA_HandleTypeDef hdma_dac_ch2;
+extern DMA_HandleTypeDef hdma_usart1_rx;
+extern DMA_HandleTypeDef hdma_usart1_tx;
+extern UART_HandleTypeDef huart1;
 extern TIM_HandleTypeDef htim2;
 
 /* USER CODE BEGIN EV */
@@ -161,6 +166,34 @@ void DebugMon_Handler(void)
 /******************************************************************************/
 
 /**
+  * @brief This function handles DMA1 channel4 global interrupt.
+  */
+void DMA1_Channel4_IRQHandler(void)
+{
+  /* USER CODE BEGIN DMA1_Channel4_IRQn 0 */
+
+  /* USER CODE END DMA1_Channel4_IRQn 0 */
+  HAL_DMA_IRQHandler(&hdma_usart1_tx);
+  /* USER CODE BEGIN DMA1_Channel4_IRQn 1 */
+
+  /* USER CODE END DMA1_Channel4_IRQn 1 */
+}
+
+/**
+  * @brief This function handles DMA1 channel5 global interrupt.
+  */
+void DMA1_Channel5_IRQHandler(void)
+{
+  /* USER CODE BEGIN DMA1_Channel5_IRQn 0 */
+
+  /* USER CODE END DMA1_Channel5_IRQn 0 */
+  HAL_DMA_IRQHandler(&hdma_usart1_rx);
+  /* USER CODE BEGIN DMA1_Channel5_IRQn 1 */
+
+  /* USER CODE END DMA1_Channel5_IRQn 1 */
+}
+
+/**
   * @brief This function handles USB low priority or CAN RX0 interrupts.
   */
 void USB_LP_CAN1_RX0_IRQHandler(void)
@@ -186,6 +219,48 @@ void TIM2_IRQHandler(void)
   /* USER CODE BEGIN TIM2_IRQn 1 */
 
   /* USER CODE END TIM2_IRQn 1 */
+}
+
+/**
+  * @brief This function handles USART1 global interrupt.
+  */
+void USART1_IRQHandler(void)
+{
+  /* USER CODE BEGIN USART1_IRQn 0 */
+
+  /* USER CODE END USART1_IRQn 0 */
+  HAL_UART_IRQHandler(&huart1);
+  /* USER CODE BEGIN USART1_IRQn 1 */
+
+  /* USER CODE END USART1_IRQn 1 */
+}
+
+/**
+  * @brief This function handles DMA2 channel3 global interrupt.
+  */
+void DMA2_Channel3_IRQHandler(void)
+{
+  /* USER CODE BEGIN DMA2_Channel3_IRQn 0 */
+
+  /* USER CODE END DMA2_Channel3_IRQn 0 */
+  HAL_DMA_IRQHandler(&hdma_dac_ch1);
+  /* USER CODE BEGIN DMA2_Channel3_IRQn 1 */
+
+  /* USER CODE END DMA2_Channel3_IRQn 1 */
+}
+
+/**
+  * @brief This function handles DMA2 channel4 and channel5 global interrupts.
+  */
+void DMA2_Channel4_5_IRQHandler(void)
+{
+  /* USER CODE BEGIN DMA2_Channel4_5_IRQn 0 */
+
+  /* USER CODE END DMA2_Channel4_5_IRQn 0 */
+  HAL_DMA_IRQHandler(&hdma_dac_ch2);
+  /* USER CODE BEGIN DMA2_Channel4_5_IRQn 1 */
+
+  /* USER CODE END DMA2_Channel4_5_IRQn 1 */
 }
 
 /* USER CODE BEGIN 1 */

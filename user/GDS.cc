@@ -1,8 +1,10 @@
-#include "FreeRTOS.h"
 #include "GDS.hpp"
+#include "FreeRTOS.h"
 #include "SEGGER_SYSVIEW.h"
 #include "StmLog.hpp"
 #include "task.h"
+
+#include "AppManager.hpp"
 
 void GDS::bspInit() {
   // sysview init must be before segger RTT init (in log)
@@ -11,7 +13,9 @@ void GDS::bspInit() {
 }
 
 void GDS::coreInit() {
-  LOG::info("GDS", "kernal start");
+  AppManager::instance().initApp();
+
+  LOG::Logger::instance().info(LOCATION, "GDS", "kernal start");
 
   // vTaskStartScheduler(); // start scheduler in main.c -> osKernelStart()
 }

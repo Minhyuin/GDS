@@ -111,7 +111,7 @@ offset  size  field
 当前最大 payload 长度：
 
 ```text
-256 bytes
+2043 bytes
 ```
 
 ## Frame Type
@@ -238,8 +238,8 @@ Payload：
 ```text
 offset  size        field
 0       1           command type = 0x20
-1       1           point count N
-2       N * 8       repeated points
+1       2           point count N, uint16 little-endian
+3       N * 8       repeated points
 ```
 
 单个点格式：
@@ -253,12 +253,12 @@ offset  size  field
 当前约束：
 
 ```text
-1 <= N <= 31
-payload length = 2 + N * 8
+1 <= N <= 255
+payload length = 3 + N * 8
 voltage clamp range = 0.0..3.3V
 ```
 
-如果 `N = 0`、`N > 31` 或 payload 长度不匹配，固件返回 `NACK / BAD_LENGTH`。
+如果 `N = 0`、`N > 255` 或 payload 长度不匹配，固件返回 `NACK / BAD_LENGTH`。
 
 如果共享输出 FIFO 剩余空间不足以放下本帧全部点，固件不会做部分写入，而是返回：
 
@@ -272,7 +272,7 @@ NACK / BUFFER_FULL
 
 ```text
 payload:
-20 02
+20 02 00
 33 33 D3 3F 33 33 D3 3F
 00 00 00 00 33 33 53 40
 ```

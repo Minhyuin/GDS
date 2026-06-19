@@ -35,11 +35,6 @@ inline uint16_t voltageToDacCode(float _voltage) {
   return static_cast<uint16_t>(scaled);
 }
 
-inline DacFrame_s
-pointToDacFrame(const APP::WGS::PROTOCOL::DacCodePoint_s &_point) {
-  return DacFrame_s{.x = _point.x, .y = _point.y};
-}
-
 enum class OutputState_e : uint8_t {
   IDLE,
   BUFFERING,
@@ -98,12 +93,7 @@ public:
           APP::WGS::PROTOCOL::ErrorCode_e::BUFFER_FULL);
     }
 
-    for (size_t i = 0; i < _cmd.points.size(); ++i) {
-      sequenceScratch_[i] = pointToDacFrame(_cmd.points[i]);
-    }
-
-    auto result = _ctx.store->push(
-        std::span<const DacFrame_s>(sequenceScratch_.data(), _cmd.points.size()));
+    auto result = _ctx.store->push(_cmd.points);
     if (result.ok()) {
       _ctx.state = OutputState_e::BUFFERING;
     }
@@ -116,9 +106,6 @@ public:
     return APP::WGS::PROTOCOL::Result_s::fail(
         APP::WGS::PROTOCOL::ErrorCode_e::UNSUPPORTED_COMMAND);
   }
-
-private:
-  std::array<DacFrame_s, 31> sequenceScratch_{};
 };
 
 template <typename Player_s>

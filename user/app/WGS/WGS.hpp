@@ -30,7 +30,7 @@ public:
 private:
   static constexpr uint32_t TASK_STACK_WORDS = 256;
   static constexpr UBaseType_t TASK_PRIORITY = tskIDLE_PRIORITY + 3;
-  static constexpr size_t MAX_SEQUENCE_POINTS = 31;
+  static constexpr size_t MAX_SEQUENCE_POINTS = PROTOCOL::MAX_SEQUENCE_POINTS;
 
   using Usart1 = BSP::UsartProxy<BSP::Usart1HandleProvider>;
   using Tim6 = BSP::TimProxy<BSP::Tim6HandleProvider>;

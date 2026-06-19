@@ -10,9 +10,6 @@ namespace APP::WGS {
 namespace {
 WGSManager *activeWgs = nullptr;
 constexpr float MAX_OUTPUT_VOLTAGE = 3.3F;
-constexpr size_t POINT_SET_PAYLOAD_SIZE = 9;
-constexpr size_t SEQUENCE_SET_HEADER_SIZE = 2;
-constexpr size_t SEQUENCE_POINT_SIZE = 8;
 
 uint32_t readU32(std::span<const std::byte> _bytes, size_t _offset) {
   return static_cast<uint32_t>(
@@ -22,6 +19,13 @@ uint32_t readU32(std::span<const std::byte> _bytes, size_t _offset) {
        << 16U) |
       (static_cast<uint32_t>(static_cast<uint8_t>(_bytes[_offset + 3]))
        << 24U));
+}
+
+uint16_t readU16(std::span<const std::byte> _bytes, size_t _offset) {
+  return static_cast<uint16_t>(
+      static_cast<uint8_t>(_bytes[_offset]) |
+      (static_cast<uint16_t>(static_cast<uint8_t>(_bytes[_offset + 1]))
+       << 8U));
 }
 
 float readFloat32Le(std::span<const std::byte> _bytes, size_t _offset) {
@@ -181,7 +185,7 @@ PROTOCOL::Result_s WGSManager::decodeCommand(const PROTOCOL::Frame_s &_frame,
     _command = PROTOCOL::PingCommand_s{};
     return PROTOCOL::Result_s::success();
   case PROTOCOL::CommandType_e::POINT_SET: {
-    if (_frame.payload.size() != POINT_SET_PAYLOAD_SIZE) {
+    if (_frame.payload.size() != PROTOCOL::POINT_SET_PAYLOAD_SIZE) {
       return PROTOCOL::Result_s::fail(PROTOCOL::ErrorCode_e::BAD_LENGTH);
     }
     const float xVoltage = readFloat32Le(_frame.payload, 1);
@@ -194,22 +198,23 @@ PROTOCOL::Result_s WGSManager::decodeCommand(const PROTOCOL::Frame_s &_frame,
     return PROTOCOL::Result_s::success();
   }
   case PROTOCOL::CommandType_e::SEQUENCE_SET: {
-    if (_frame.payload.size() < SEQUENCE_SET_HEADER_SIZE) {
+    if (_frame.payload.size() < PROTOCOL::SEQUENCE_SET_HEADER_SIZE) {
       return PROTOCOL::Result_s::fail(PROTOCOL::ErrorCode_e::BAD_LENGTH);
     }
 
-    const size_t pointCount = static_cast<uint8_t>(_frame.payload[1]);
+    const size_t pointCount = readU16(_frame.payload, 1);
     if (pointCount == 0U || pointCount > decodeScratch_.size()) {
       return PROTOCOL::Result_s::fail(PROTOCOL::ErrorCode_e::BAD_LENGTH);
     }
 
     const size_t expectedPayloadSize =
-        SEQUENCE_SET_HEADER_SIZE + pointCount * SEQUENCE_POINT_SIZE;
+        PROTOCOL::SEQUENCE_SET_HEADER_SIZE +
+        pointCount * PROTOCOL::SEQUENCE_POINT_SIZE;
     if (_frame.payload.size() != expectedPayloadSize) {
       return PROTOCOL::Result_s::fail(PROTOCOL::ErrorCode_e::BAD_LENGTH);
     }
 
-    size_t offset = SEQUENCE_SET_HEADER_SIZE;
+    size_t offset = PROTOCOL::SEQUENCE_SET_HEADER_SIZE;
     for (size_t i = 0; i < pointCount; ++i) {
       const float xVoltage = readFloat32Le(_frame.payload, offset);
       const float yVoltage =
@@ -218,7 +223,7 @@ PROTOCOL::Result_s WGSManager::decodeCommand(const PROTOCOL::Frame_s &_frame,
           .x = voltageToDacCode(xVoltage),
           .y = voltageToDacCode(yVoltage),
       };
-      offset += SEQUENCE_POINT_SIZE;
+      offset += PROTOCOL::SEQUENCE_POINT_SIZE;
     }
 
     _command = PROTOCOL::SequenceSetCommand_s{

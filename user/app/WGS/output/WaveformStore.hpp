@@ -11,7 +11,7 @@ namespace APP::WGS::OUTPUT {
 
 class WaveformStore {
 public:
-  static constexpr size_t CAPACITY = 256;
+  static constexpr size_t CAPACITY = 512;
 
   APP::WGS::PROTOCOL::Result_s push(std::span<const DacFrame_s> _frames);
   bool popFromIsr(DacFrame_s &_frame);

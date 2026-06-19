@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Command.hpp"
 #include "Crc.hpp"
 
 #include <array>
@@ -32,7 +33,7 @@ struct GdsFrameV1Policy_s {
   static constexpr bool CRC_ENABLED = false;
   static constexpr size_t HEADER_SIZE = 3;
   static constexpr size_t CRC_SIZE = CRC_ENABLED ? 2 : 0;
-  static constexpr size_t MAX_PAYLOAD = 256;
+  static constexpr size_t MAX_PAYLOAD = SEQUENCE_SET_MAX_PAYLOAD_SIZE;
 
   using Crc_s = Crc16Ccitt_s;
 
@@ -53,6 +54,7 @@ struct GdsFrameV1Policy_s {
   }
 };
 
-static_assert(GdsFrameV1Policy_s::MAX_PAYLOAD <= 512);
+static_assert(GdsFrameV1Policy_s::MAX_PAYLOAD == 2043);
+static_assert(GdsFrameV1Policy_s::MAX_PAYLOAD <= 4096);
 
 } // namespace APP::WGS::PROTOCOL

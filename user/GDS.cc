@@ -15,15 +15,23 @@ void GDS::bspInit() {
 void GDS::coreInit() {
   AppManager::instance().initApp();
 
-  LOG::Logger::instance().info(LOCATION, "GDS", "kernal start");
+  LOG::Logger::instance().info(LOCATION, "GDS", "kernel objects ready");
 
   // vTaskStartScheduler(); // start scheduler in main.c -> osKernelStart()
 }
 
+void GDS::initBsp() { bspInit(); }
+
+void GDS::initApp() { coreInit(); }
+
 void GDS::init() {
   /* Welcome to GDS */
-  bspInit();
-  coreInit();
+  initBsp();
+  initApp();
 }
 
 void initGDS() { GDS::instance().init(); }
+
+void initGDSBsp() { GDS::instance().initBsp(); }
+
+void initGDSApp() { GDS::instance().initApp(); }

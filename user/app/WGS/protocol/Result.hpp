@@ -1,6 +1,9 @@
 #pragma once
 
+#include "StmLog.hpp"
+
 #include <cstdint>
+#include <source_location>
 
 namespace APP::WGS::PROTOCOL {
 
@@ -26,7 +29,11 @@ struct Result_s {
 
   static constexpr Result_s success() { return {}; }
 
-  static constexpr Result_s fail(ErrorCode_e _code) {
+  static Result_s
+  fail(ErrorCode_e _code,
+       std::source_location _loc = std::source_location::current()) {
+    LOG::Logger::instance().warn(_loc, "WGS Result", "fail code: %u",
+                                 static_cast<unsigned>(_code));
     return Result_s{.code = _code};
   }
 };

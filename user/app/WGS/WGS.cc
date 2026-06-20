@@ -94,6 +94,8 @@ void WGSManager::notifyRxFromIsr() {
   portYIELD_FROM_ISR(highPriorityTaskWoken);
 }
 
+void WGSManager::onTxCompleteFromIsr() { transport_.onTxComplete(); }
+
 void WGSManager::onDacDmaHalfCompleteFromIsr() {
   output_.onDmaHalfCompleteFromIsr();
 }
@@ -257,6 +259,12 @@ extern "C" void notifyWgsRxFromIsr() {
   }
 }
 
+extern "C" void notifyWgsTxCompleteFromIsr() {
+  if (APP::WGS::activeWgs != nullptr) {
+    APP::WGS::activeWgs->onTxCompleteFromIsr();
+  }
+}
+
 extern "C" void notifyWgsDacDmaHalfCompleteFromIsr() {
   if (APP::WGS::activeWgs != nullptr) {
     APP::WGS::activeWgs->onDacDmaHalfCompleteFromIsr();
@@ -278,25 +286,31 @@ extern "C" void HAL_DAC_ConvCpltCallbackCh1(DAC_HandleTypeDef *) {
 }
 
 extern "C" void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *_huart,
-                                           uint16_t _size) {
+                                           uint16_t) {
   if (_huart == &huart1) {
     notifyWgsRxFromIsr();
   }
 }
 
+extern "C" void HAL_UART_TxCpltCallback(UART_HandleTypeDef *_huart) {
+  if (_huart == &huart1) {
+    notifyWgsTxCompleteFromIsr();
+  }
+}
+
 extern "C" void HAL_UART_ErrorCallback(UART_HandleTypeDef *_huart) {
-  if (HAL_UART_GetError(_huart) == HAL_UART_ERROR_ORE) {
+  if (_huart != &huart1) {
+    return;
+  }
+
+  const uint32_t error = HAL_UART_GetError(_huart);
+  if ((error & HAL_UART_ERROR_ORE) != 0U) {
     __HAL_UART_CLEAR_OREFLAG(_huart);
-    HAL_UARTEx_ReceiveToIdle_DMA(_huart, _huart->pRxBuffPtr,
-                                 _huart->RxXferSize);
-    __HAL_DMA_DISABLE_IT(_huart->hdmarx, DMA_IT_HT);
   }
-  // https://blog.csdn.net/Jonshen/article/details/144032215
-  // (上电初始化出现帧错误（FE）)
-  else if (HAL_UART_GetError(_huart) == HAL_UART_ERROR_FE) {
+  if ((error & HAL_UART_ERROR_FE) != 0U) {
     __HAL_UART_CLEAR_FEFLAG(_huart);
-    HAL_UARTEx_ReceiveToIdle_DMA(_huart, _huart->pRxBuffPtr,
-                                 _huart->RxXferSize);
-    __HAL_DMA_DISABLE_IT(_huart->hdmarx, DMA_IT_HT);
   }
+
+  HAL_UARTEx_ReceiveToIdle_DMA(_huart, _huart->pRxBuffPtr, _huart->RxXferSize);
+  __HAL_DMA_DISABLE_IT(_huart->hdmarx, DMA_IT_HT);
 }

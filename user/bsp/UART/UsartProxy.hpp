@@ -23,7 +23,12 @@ public:
   static DMA_HandleTypeDef &txDma() { return HandleProvider::txDma(); }
 
   static HAL_StatusTypeDef startRxDma(uint8_t *_buffer, size_t _size) {
-    return HAL_UART_Receive_DMA(&uart(), _buffer, _size);
+    const auto status =
+        HAL_UARTEx_ReceiveToIdle_DMA(&uart(), _buffer, _size);
+    if (status == HAL_OK) {
+      __HAL_DMA_DISABLE_IT(&rxDma(), DMA_IT_HT);
+    }
+    return status;
   }
 
   static HAL_StatusTypeDef transmitDma(uint8_t *_buffer, size_t _size) {

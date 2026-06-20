@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Result.hpp"
+#include "TransportTypes.hpp"
 
 #include <array>
 #include <cstddef>
@@ -14,10 +15,6 @@ enum class TransportState_e : uint8_t {
   READY,
   TX_BUSY,
   FAULT,
-};
-
-struct RxSpan_s {
-  std::span<const std::byte> bytes{};
 };
 
 template <typename Proxy> class UsartDmaTransport {

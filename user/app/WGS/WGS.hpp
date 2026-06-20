@@ -24,6 +24,7 @@ public:
 
   PROTOCOL::Result_s init();
   void notifyRxFromIsr();
+  void onTxCompleteFromIsr();
   void onDacDmaHalfCompleteFromIsr();
   void onDacDmaCompleteFromIsr();
 
@@ -69,5 +70,6 @@ private:
 } // namespace APP::WGS
 
 extern "C" void notifyWgsRxFromIsr();
+extern "C" void notifyWgsTxCompleteFromIsr();
 extern "C" void notifyWgsDacDmaHalfCompleteFromIsr();
 extern "C" void notifyWgsDacDmaCompleteFromIsr();

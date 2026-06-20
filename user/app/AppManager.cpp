@@ -15,7 +15,10 @@ void AppManager::createApp() {
                                  static_cast<unsigned>(transportResult.code));
   }
 
-  uint32_t freeHeap = xPortGetFreeHeapSize();
-  LOG::Logger::instance().info(LOCATION, "App", "init complete, Free Heap: %u",
-                               freeHeap);
+  const size_t freeHeap = xPortGetFreeHeapSize();
+  const size_t minimumEverFreeHeap = xPortGetMinimumEverFreeHeapSize();
+  LOG::Logger::instance().info(
+      LOCATION, "App", "init complete, Free Heap: %lu, Min Ever: %lu",
+      static_cast<unsigned long>(freeHeap),
+      static_cast<unsigned long>(minimumEverFreeHeap));
 }

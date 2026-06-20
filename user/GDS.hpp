@@ -5,6 +5,8 @@ extern "C" {
 #endif
 
 void initGDS();
+void initGDSBsp();
+void initGDSApp();
 
 #ifdef __cplusplus
 }
@@ -14,6 +16,8 @@ void initGDS();
 class GDS : public Singleton<GDS> {
 public:
   void init();
+  void initBsp();
+  void initApp();
 
 private:
   GDS() = default;

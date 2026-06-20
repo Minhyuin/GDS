@@ -2,7 +2,7 @@
 
 WGS 是固件中的波形生成系统模块，负责接收上位机命令、解析协议帧、控制输出模式，并最终通过 DAC 输出振镜控制电压。
 
-当前 WGS 运行在 FreeRTOS 上。串口中断或 HAL 回调只负责通知 WGS 任务，实际的数据消费、协议解析、命令处理、输出 FIFO 写入和应答发送都在 WGS worker task 中完成。DAC 真实输出由 TIM6 TRGO 触发 DAC + DMA 完成，CPU 只在 DMA 半传输/全传输回调中补充下一半播放缓冲。
+当前 WGS 运行在 FreeRTOS 上。USART1 receive-to-idle 回调只负责通知 WGS 任务，实际的数据消费、协议解析、命令处理、输出 FIFO 写入和应答发送都在 WGS worker task 中完成。DAC 真实输出由 TIM6 TRGO 触发 DAC + DMA 完成，CPU 只在 DMA 半传输/全传输回调中补充下一半播放缓冲。
 
 ## 模块边界
 
@@ -55,7 +55,7 @@ ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
 
 没有接收事件时，WGS 任务不会轮询占用 CPU。
 
-串口中断、UART IDLE 回调或 DMA RX 事件回调应只调用：
+USART1 receive-to-idle 回调应只调用：
 
 ```cpp
 notifyWgsRxFromIsr();
@@ -63,7 +63,7 @@ notifyWgsRxFromIsr();
 
 该函数会通知 WGS 任务。真正的 RX buffer 消费、协议解析和应答发送都在任务上下文中执行。
 
-当前 `WGS.cc` 已提供 `HAL_UARTEx_RxEventCallback()`，当回调来自 `USART1` 时会调用 `notifyWgsRxFromIsr()`。需要注意：底层 transport 当前启动 RX 的接口仍是 `HAL_UART_Receive_DMA()`；如果工程希望依赖 `HAL_UARTEx_RxEventCallback()` 的 receive-to-idle 行为，后续应把 BSP UART RX 启动路径切换为 `HAL_UARTEx_ReceiveToIdle_DMA()`，或在 DMA RX complete / UART IDLE 的实际回调路径中继续只做任务通知。
+当前 `WGS.cc` 提供 `HAL_UARTEx_RxEventCallback()`，当回调来自 `USART1` 时会调用 `notifyWgsRxFromIsr()`。底层 transport 通过 `HAL_UARTEx_ReceiveToIdle_DMA()` 启动接收，因此短帧发送完成后会由 USART IDLE 事件唤醒 WGS worker task。
 
 ## 串口传输
 
@@ -363,7 +363,7 @@ frame = [
 
 已实现：
 
-- USART1 DMA RX buffer 启动
+- USART1 receive-to-idle DMA RX 启动
 - WGS 静态 FreeRTOS worker task
 - ISR 通知入口 `notifyWgsRxFromIsr()`
 - `USART1` 的 `HAL_UARTEx_RxEventCallback()` 通知入口
@@ -383,9 +383,8 @@ frame = [
 
 尚未完成：
 
-- BSP UART RX 启动路径与 receive-to-idle 回调机制的最终统一
+- USB CDC transport 接入
 - 流式播放双缓冲填充策略
-- TX DMA complete 后调用 `onTxComplete()`
 - 角度到电压或 DAC code 的转换
 - 上位机 MATLAB SDK
 

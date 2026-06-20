@@ -9,5 +9,4 @@ task_plan.md
 
 *.code-workspace
 
-.vscode/launch.json
 */*.log

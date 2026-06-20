@@ -10,7 +10,7 @@
       "command": "ninja -C 'build' ",
       "args": [],
       "options": {
-        "cwd": "${workspaceFolder}"
+        "cwd": "${workspaceFolder}/1.Fireware"
       },
       "detail": "make...",
       "problemMatcher": []
@@ -19,6 +19,9 @@
       "type": "shell",
       "label": "cmake",
       "command": " cmake -B 'build' -G 'Ninja' ",
+      "options": {
+        "cwd": "${workspaceFolder}/1.Fireware"
+      },
       "problemMatcher": []
     },
     {

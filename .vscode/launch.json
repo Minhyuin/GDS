@@ -1,0 +1,117 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "jlink-Debug",
+      "executable": "./build/GDS.elf",
+      "type": "cortex-debug",
+      "request": "launch",
+      "cwd": "${workspaceFolder}/1.Fireware",
+      "showDevDebugOutput": "none",
+      "servertype": "jlink",
+      "device": "stm32f103ze",
+      "liveWatch": {
+        "enabled": true,
+        "samplesPerSecond": 1
+      },
+      "preLaunchTask": "build",
+      "preLaunchCommands": [
+      ],
+      "rttConfig": {
+        "enabled": true,
+        "address": "auto",
+        "polling_interval": 10,
+        "decoders": [
+          {
+            "type": "console",
+            "label": "cnt",
+            "noclear": false,
+            "logfile": "${workspaceFolder}/1.Fireware/.docs/rtt.log",
+            "port": 0
+          }
+        ]
+      }
+    },
+    {
+      "showDevDebugOutput": "none",
+      "cwd": "${workspaceFolder}/1.Fireware",
+      "executable": "./build/GDS.elf",
+      "name": "dap",
+      "request": "launch",
+      "type": "cortex-debug",
+      "servertype": "openocd",
+      "configFiles": [
+        "${workspaceFolder}/1.Fireware/tools/openocd/dap.cfg",
+        "${workspaceFolder}/1.Fireware/tools/openocd/target/stm32f1x.cfg"
+      ],
+      "liveWatch": {
+        "enabled": true,
+        "samplesPerSecond": 1
+      },
+      "preLaunchTask": "build",
+      "preLaunchCommands": [
+      ],
+      // "overrideLaunchCommands": [  // 不复位debug
+      //     "monitor  halt",
+      // ],
+      //   "overrideResetCommands": [
+      //     "monitor  halt",
+      // ], // "postDebugTask": "close-RTT",
+      "rttConfig": {
+        "enabled": true,
+        "address": "auto",
+        "polling_interval": 10,
+        "decoders": [
+          {
+            "type": "console",
+            "label": "cnt",
+            "noclear": false,
+            "logfile": "${workspaceFolder}/1.Fireware/.docs/rtt.log",
+            "port": 0
+          }
+        ]
+      }
+    },
+    {
+      "showDevDebugOutput": "none",
+      "cwd": "${workspaceFolder}/1.Fireware",
+      "executable": "./build/GDS.elf",
+      "name": "stlink",
+      "request": "launch",
+      "type": "cortex-debug",
+      "servertype": "openocd",
+      "configFiles": [
+        "${workspaceFolder}/1.Fireware/tools/openocd/stlink.cfg",
+        "${workspaceFolder}/1.Fireware/tools/openocd/target/stm32f1x.cfg"
+      ],
+      "liveWatch": {
+        "enabled": true,
+        "samplesPerSecond": 1
+      },
+      "preLaunchTask": "build",
+      "preLaunchCommands": [
+      ],
+      // "overrideLaunchCommands": [  // 不复位debug
+      //     "monitor  halt",
+      // ],
+      //   "overrideResetCommands": [
+      //     "monitor  halt",
+      // ],
+      // "postDebugTask": "close-RTT",
+      "rttConfig": {
+        "enabled": true,
+        "address": "auto",
+        "polling_interval": 10,
+        "decoders": [
+          {
+            "type": "console",
+            "label": "cnt",
+            "noclear": false,
+            "logfile": "${workspaceFolder}/1.Fireware/.docs/rtt.log",
+            "port": 0
+          }
+        ]
+      }
+    }
+  ]
+}

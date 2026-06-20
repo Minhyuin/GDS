@@ -1,0 +1,180 @@
+classdef Client < handle
+    %CLIENT High-level MATLAB client for the WGS UART protocol.
+
+    properties
+        Port = "COM43"
+        BaudRate = 115200
+        Timeout = 5.0
+        OpenStabilizeSeconds = 2.0
+        MaxAttempts = 3
+        Verbose = true
+        SafeDtr = false
+        SafeRts = false
+    end
+
+    properties (Access = private)
+        Device = []
+    end
+
+    methods
+        function obj = Client(port, varargin)
+            if nargin < 1 || strlength(string(port)) == 0
+                port = "COM43";
+            end
+
+            obj.Port = string(port);
+            obj.applyOptions(varargin{:});
+            obj.open();
+        end
+
+        function delete(obj)
+            obj.close();
+        end
+
+        function close(obj)
+            if ~isempty(obj.Device) && isvalid(obj.Device)
+                obj.configureControlLines(false, false);
+                flush(obj.Device);
+            end
+            obj.Device = [];
+        end
+
+        function reply = ping(obj)
+            C = wgs.internal.constants();
+            reply = obj.sendCommand(uint8(C.CMD_PING));
+        end
+
+        function reply = pointSet(obj, xVoltage, yVoltage)
+            C = wgs.internal.constants();
+            payload = [
+                uint8(C.CMD_POINT_SET), ...
+                wgs.internal.float32le(xVoltage), ...
+                wgs.internal.float32le(yVoltage)
+            ];
+            reply = obj.sendCommand(payload);
+        end
+
+        function reply = sequenceSet(obj, points)
+            C = wgs.internal.constants();
+
+            if size(points, 2) ~= 2
+                error("WGS:BadPoints", "points must be an N-by-2 matrix.");
+            end
+
+            pointCount = size(points, 1);
+            if pointCount < 1 || pointCount > C.MAX_SEQUENCE_POINTS
+                error("WGS:BadPointCount", ...
+                      "SEQUENCE_SET point count must be in 1..%d.", ...
+                      C.MAX_SEQUENCE_POINTS);
+            end
+
+            payload = zeros(1, C.SEQUENCE_SET_HEADER_SIZE + pointCount * 8, ...
+                            "uint8");
+            payload(1) = uint8(C.CMD_SEQUENCE_SET);
+            payload(2:3) = wgs.internal.uint16le(pointCount);
+
+            offset = C.SEQUENCE_SET_HEADER_SIZE + 1;
+            for i = 1:pointCount
+                payload(offset:offset+3) = wgs.internal.float32le(points(i, 1));
+                payload(offset+4:offset+7) = ...
+                    wgs.internal.float32le(points(i, 2));
+                offset = offset + 8;
+            end
+
+            reply = obj.sendCommand(payload);
+        end
+    end
+
+    methods (Access = private)
+        function open(obj)
+            obj.Device = serialport(obj.Port, obj.BaudRate, ...
+                "Timeout", obj.Timeout, ...
+                "FlowControl", "none");
+
+            obj.configureControlLines(obj.SafeDtr, obj.SafeRts);
+            pause(obj.OpenStabilizeSeconds);
+            flush(obj.Device);
+        end
+
+        function configureControlLines(obj, dtrState, rtsState)
+            try
+                setDTR(obj.Device, dtrState);
+                setRTS(obj.Device, rtsState);
+            catch err
+                warning("WGS:ControlLinesUnsupported", ...
+                        "Could not configure DTR/RTS: %s", err.message);
+            end
+        end
+
+        function reply = sendCommand(obj, payload)
+            obj.ensureOpen();
+
+            C = wgs.internal.constants();
+            frame = wgs.internal.buildFrame(C.FRAME_COMMAND, payload);
+
+            for attempt = 1:obj.MaxAttempts
+                flush(obj.Device, "input");
+                if obj.Verbose
+                    fprintf("TX[%d]: %s\n", attempt, ...
+                            wgs.internal.bytesToHex(frame));
+                end
+
+                write(obj.Device, frame, "uint8");
+                pause(0.02);
+
+                try
+                    reply = wgs.internal.readReply(obj.Device, obj.Verbose);
+                    return;
+                catch err
+                    if attempt >= obj.MaxAttempts || ...
+                            ~strcmp(err.identifier, "WGS:ReplyTimeout")
+                        rethrow(err);
+                    end
+
+                    if obj.Verbose
+                        fprintf("No reply, retrying command...\n");
+                    end
+                    pause(0.2);
+                end
+            end
+        end
+
+        function ensureOpen(obj)
+            if isempty(obj.Device) || ~isvalid(obj.Device)
+                error("WGS:SerialClosed", "WGS serial client is closed.");
+            end
+        end
+
+        function applyOptions(obj, varargin)
+            if mod(numel(varargin), 2) ~= 0
+                error("WGS:BadOptions", ...
+                      "Options must be name-value pairs.");
+            end
+
+            for k = 1:2:numel(varargin)
+                name = lower(string(varargin{k}));
+                value = varargin{k + 1};
+
+                switch name
+                    case "baudrate"
+                        obj.BaudRate = value;
+                    case "timeout"
+                        obj.Timeout = value;
+                    case "openstabilizeseconds"
+                        obj.OpenStabilizeSeconds = value;
+                    case "maxattempts"
+                        obj.MaxAttempts = value;
+                    case "verbose"
+                        obj.Verbose = logical(value);
+                    case "safedtr"
+                        obj.SafeDtr = logical(value);
+                    case "saferts"
+                        obj.SafeRts = logical(value);
+                    otherwise
+                        error("WGS:UnknownOption", ...
+                              "Unknown WGS client option: %s", name);
+                end
+            end
+        end
+    end
+end

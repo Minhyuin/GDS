@@ -1,12 +1,12 @@
 # WGS MATLAB 接口
 
 此文件夹包含 WGS 的 MATLAB 端客户端。WGS 是 Waveform Generation System
-（波形生成系统）的缩写。它用于被光学设计脚本直接调用，这些脚本会生成振镜电压点或电压波形。
+（波形生成系统）的缩写。它用于被波形设计脚本直接调用，这些脚本会生成电压点或电压序列。
 
 ## 目录结构
 
 ```text
-test/matlab/
+your_own_path/wgs_matlab/
   +wgs/
     Client.m              高层 UART 客户端类
     connect.m             便捷构造函数
@@ -146,23 +146,3 @@ A5 02 02 00 01 00
 ```
 
 含义为 `ACK`、payload 长度为 `2`、状态为 `DONE`、详情为 `NONE`。
-
-## 测试与演示
-
-运行无需硬件的帧构造测试：
-
-```matlab
-test_wgs_protocol
-```
-
-运行端到端 UART demo：
-
-```matlab
-wgs_uart_demo("COM43")
-```
-
-只运行 DTR/RTS 打开端口诊断：
-
-```matlab
-wgs_open_only_dtr_test
-```

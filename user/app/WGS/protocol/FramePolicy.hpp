@@ -54,7 +54,7 @@ struct GdsFrameV1Policy_s {
   }
 };
 
-static_assert(GdsFrameV1Policy_s::MAX_PAYLOAD == 2043);
+static_assert(GdsFrameV1Policy_s::MAX_PAYLOAD == 4004);
 static_assert(GdsFrameV1Policy_s::MAX_PAYLOAD <= 4096);
 
 } // namespace APP::WGS::PROTOCOL

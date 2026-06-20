@@ -13,10 +13,11 @@ HAL_StatusTypeDef DacProxy::stopDma(uint32_t _channel) {
 }
 
 HAL_StatusTypeDef DacProxy::startDma(uint32_t _channel,
-                                     const uint32_t *_buffer,
+                                     const uint16_t *_buffer,
                                      uint32_t _length) {
-  return HAL_DAC_Start_DMA(&dac(), _channel, _buffer, _length,
-                           DAC_ALIGN_12B_R);
+  return HAL_DAC_Start_DMA(
+      &dac(), _channel, reinterpret_cast<const uint32_t *>(_buffer), _length,
+      DAC_ALIGN_12B_R);
 }
 
 HAL_StatusTypeDef DacProxy::startDac(uint32_t _channel) {

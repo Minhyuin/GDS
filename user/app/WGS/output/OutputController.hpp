@@ -43,22 +43,6 @@ public:
 
   OutputState_e state() const { return context_.state; }
 
-  void onDmaHalfCompleteFromIsr() {
-    if (context_.player == nullptr || context_.store == nullptr) {
-      return;
-    }
-
-    context_.player->refillHalf(BufferHalf_e::FIRST, *context_.store);
-  }
-
-  void onDmaCompleteFromIsr() {
-    if (context_.player == nullptr || context_.store == nullptr) {
-      return;
-    }
-
-    context_.player->refillHalf(BufferHalf_e::SECOND, *context_.store);
-  }
-
 private:
   OutputContext_s<Player> context_{};
   OutputMode_v<Player> mode_{BufferedOutputMode<Player>{}};

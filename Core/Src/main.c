@@ -96,6 +96,7 @@ int main(void)
   MX_DAC_Init();
   MX_USART1_UART_Init();
   MX_TIM6_Init();
+  MX_TIM7_Init();
   /* USER CODE BEGIN 2 */
   initGDSBsp();
   /* USER CODE END 2 */

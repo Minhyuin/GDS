@@ -39,49 +39,65 @@ classdef Client < handle
             obj.Device = [];
         end
 
+        function flushInput(obj)
+            obj.ensureOpen();
+            flush(obj.Device, "input");
+        end
+
         function reply = ping(obj)
             C = wgs.internal.constants();
             reply = obj.sendCommand(uint8(C.CMD_PING));
         end
 
-        function reply = pointSet(obj, xVoltage, yVoltage)
+        function reply = pointSet(obj, channel, voltage)
+            reply = obj.sendCommand(obj.buildPointSetPayload(channel, voltage));
+        end
+
+        function pointSetNoReply(obj, channel, voltage)
+            obj.sendCommandNoReply(obj.buildPointSetPayload(channel, voltage));
+        end
+
+        function reply = sequenceSet(obj, channel, samples)
+            C = wgs.internal.constants();
+
+            samples = reshape(samples, 1, []);
+            sampleCount = numel(samples);
+            if sampleCount < 1 || sampleCount > C.MAX_SEQUENCE_POINTS
+                error("WGS:BadSampleCount", ...
+                      "SEQUENCE_SET sample count must be in 1..%d.", ...
+                      C.MAX_SEQUENCE_POINTS);
+            end
+
+            payload = zeros(1, C.SEQUENCE_SET_HEADER_SIZE + sampleCount * 4, ...
+                            "uint8");
+            payload(1) = uint8(C.CMD_SEQUENCE_SET);
+            payload(2) = wgs.internal.channelByte(channel);
+            payload(3:4) = wgs.internal.uint16le(sampleCount);
+
+            offset = C.SEQUENCE_SET_HEADER_SIZE + 1;
+            for i = 1:sampleCount
+                payload(offset:offset+3) = wgs.internal.float32le(samples(i));
+                offset = offset + 4;
+            end
+
+            reply = obj.sendCommand(payload);
+        end
+
+        function reply = setSampleRate(obj, channel, sampleRateHz)
             C = wgs.internal.constants();
             payload = [
-                uint8(C.CMD_POINT_SET), ...
-                wgs.internal.float32le(xVoltage), ...
-                wgs.internal.float32le(yVoltage)
+                uint8(C.CMD_TIMER_SET), ...
+                wgs.internal.channelByte(channel), ...
+                wgs.internal.float32le(sampleRateHz)
             ];
             reply = obj.sendCommand(payload);
         end
 
-        function reply = sequenceSet(obj, points)
+        function reply = setWaveFrequency(obj, channel, waveformFrequencyHz)
             C = wgs.internal.constants();
-
-            if size(points, 2) ~= 2
-                error("WGS:BadPoints", "points must be an N-by-2 matrix.");
-            end
-
-            pointCount = size(points, 1);
-            if pointCount < 1 || pointCount > C.MAX_SEQUENCE_POINTS
-                error("WGS:BadPointCount", ...
-                      "SEQUENCE_SET point count must be in 1..%d.", ...
-                      C.MAX_SEQUENCE_POINTS);
-            end
-
-            payload = zeros(1, C.SEQUENCE_SET_HEADER_SIZE + pointCount * 8, ...
-                            "uint8");
-            payload(1) = uint8(C.CMD_SEQUENCE_SET);
-            payload(2:3) = wgs.internal.uint16le(pointCount);
-
-            offset = C.SEQUENCE_SET_HEADER_SIZE + 1;
-            for i = 1:pointCount
-                payload(offset:offset+3) = wgs.internal.float32le(points(i, 1));
-                payload(offset+4:offset+7) = ...
-                    wgs.internal.float32le(points(i, 2));
-                offset = offset + 8;
-            end
-
-            reply = obj.sendCommand(payload);
+            reply = obj.setSampleRate(channel, ...
+                                      waveformFrequencyHz * ...
+                                      C.PERIOD_SAMPLE_COUNT);
         end
     end
 
@@ -120,7 +136,7 @@ classdef Client < handle
                 end
 
                 write(obj.Device, frame, "uint8");
-                pause(0.02);
+                pause(0.001);
 
                 try
                     reply = wgs.internal.readReply(obj.Device, obj.Verbose);
@@ -134,9 +150,31 @@ classdef Client < handle
                     if obj.Verbose
                         fprintf("No reply, retrying command...\n");
                     end
-                    pause(0.2);
+                    pause(0.03);
                 end
             end
+        end
+
+        function sendCommandNoReply(obj, payload)
+            obj.ensureOpen();
+
+            C = wgs.internal.constants();
+            frame = wgs.internal.buildFrame(C.FRAME_COMMAND, payload);
+
+            if obj.Verbose
+                fprintf("TX: %s\n", wgs.internal.bytesToHex(frame));
+            end
+
+            write(obj.Device, frame, "uint8");
+        end
+
+        function payload = buildPointSetPayload(~, channel, voltage)
+            C = wgs.internal.constants();
+            payload = [
+                uint8(C.CMD_POINT_SET), ...
+                wgs.internal.channelByte(channel), ...
+                wgs.internal.float32le(voltage)
+            ];
         end
 
         function ensureOpen(obj)

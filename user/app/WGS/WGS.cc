@@ -58,6 +58,20 @@ uint16_t voltageToDacCode(float _voltage) {
   }
   return static_cast<uint16_t>(scaled);
 }
+
+bool readChannel(std::span<const std::byte> _bytes, size_t _offset,
+                 PROTOCOL::Channel_e &_channel) {
+  const auto raw = static_cast<uint8_t>(_bytes[_offset]);
+  if (raw == static_cast<uint8_t>(PROTOCOL::Channel_e::CH1)) {
+    _channel = PROTOCOL::Channel_e::CH1;
+    return true;
+  }
+  if (raw == static_cast<uint8_t>(PROTOCOL::Channel_e::CH2)) {
+    _channel = PROTOCOL::Channel_e::CH2;
+    return true;
+  }
+  return false;
+}
 } // namespace
 
 WGSManager::WGSManager()
@@ -97,11 +111,9 @@ void WGSManager::notifyRxFromIsr() {
 void WGSManager::onTxCompleteFromIsr() { transport_.onTxComplete(); }
 
 void WGSManager::onDacDmaHalfCompleteFromIsr() {
-  output_.onDmaHalfCompleteFromIsr();
 }
 
 void WGSManager::onDacDmaCompleteFromIsr() {
-  output_.onDmaCompleteFromIsr();
 }
 
 PROTOCOL::Result_s WGSManager::startTask() {
@@ -190,12 +202,17 @@ PROTOCOL::Result_s WGSManager::decodeCommand(const PROTOCOL::Frame_s &_frame,
     if (_frame.payload.size() != PROTOCOL::POINT_SET_PAYLOAD_SIZE) {
       return PROTOCOL::Result_s::fail(PROTOCOL::ErrorCode_e::BAD_LENGTH);
     }
-    const float xVoltage = readFloat32Le(_frame.payload, 1);
-    const float yVoltage = readFloat32Le(_frame.payload, 5);
+
+    PROTOCOL::Channel_e channel{};
+    if (!readChannel(_frame.payload, 1, channel)) {
+      return PROTOCOL::Result_s::fail(PROTOCOL::ErrorCode_e::BAD_LENGTH);
+    }
+
+    const float voltage = readFloat32Le(_frame.payload, 2);
 
     _command = PROTOCOL::PointSetCommand_s{
-        .xVoltage = xVoltage,
-        .yVoltage = yVoltage,
+        .channel = channel,
+        .sample = PROTOCOL::DacSample_s{.value = voltageToDacCode(voltage)},
     };
     return PROTOCOL::Result_s::success();
   }
@@ -204,7 +221,12 @@ PROTOCOL::Result_s WGSManager::decodeCommand(const PROTOCOL::Frame_s &_frame,
       return PROTOCOL::Result_s::fail(PROTOCOL::ErrorCode_e::BAD_LENGTH);
     }
 
-    const size_t pointCount = readU16(_frame.payload, 1);
+    PROTOCOL::Channel_e channel{};
+    if (!readChannel(_frame.payload, 1, channel)) {
+      return PROTOCOL::Result_s::fail(PROTOCOL::ErrorCode_e::BAD_LENGTH);
+    }
+
+    const size_t pointCount = readU16(_frame.payload, 2);
     if (pointCount == 0U || pointCount > decodeScratch_.size()) {
       return PROTOCOL::Result_s::fail(PROTOCOL::ErrorCode_e::BAD_LENGTH);
     }
@@ -218,19 +240,38 @@ PROTOCOL::Result_s WGSManager::decodeCommand(const PROTOCOL::Frame_s &_frame,
 
     size_t offset = PROTOCOL::SEQUENCE_SET_HEADER_SIZE;
     for (size_t i = 0; i < pointCount; ++i) {
-      const float xVoltage = readFloat32Le(_frame.payload, offset);
-      const float yVoltage =
-          readFloat32Le(_frame.payload, offset + sizeof(float));
-      decodeScratch_[i] = PROTOCOL::DacCodePoint_s{
-          .x = voltageToDacCode(xVoltage),
-          .y = voltageToDacCode(yVoltage),
+      const float voltage = readFloat32Le(_frame.payload, offset);
+      decodeScratch_[i] = PROTOCOL::DacSample_s{
+          .value = voltageToDacCode(voltage),
       };
       offset += PROTOCOL::SEQUENCE_POINT_SIZE;
     }
 
     _command = PROTOCOL::SequenceSetCommand_s{
-        .points = std::span<const PROTOCOL::DacCodePoint_s>(
+        .channel = channel,
+        .samples = std::span<const PROTOCOL::DacSample_s>(
             decodeScratch_.data(), pointCount),
+    };
+    return PROTOCOL::Result_s::success();
+  }
+  case PROTOCOL::CommandType_e::TIMER_SET: {
+    if (_frame.payload.size() != PROTOCOL::TIMER_SET_PAYLOAD_SIZE) {
+      return PROTOCOL::Result_s::fail(PROTOCOL::ErrorCode_e::BAD_LENGTH);
+    }
+
+    PROTOCOL::Channel_e channel{};
+    if (!readChannel(_frame.payload, 1, channel)) {
+      return PROTOCOL::Result_s::fail(PROTOCOL::ErrorCode_e::BAD_LENGTH);
+    }
+
+    const float sampleRateHz = readFloat32Le(_frame.payload, 2);
+    if (!std::isfinite(sampleRateHz)) {
+      return PROTOCOL::Result_s::fail(PROTOCOL::ErrorCode_e::OUT_OF_RANGE);
+    }
+
+    _command = PROTOCOL::TimerSetCommand_s{
+        .channel = channel,
+        .sampleRateHz = sampleRateHz,
     };
     return PROTOCOL::Result_s::success();
   }

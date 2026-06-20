@@ -19,7 +19,7 @@ enum class TransportState_e : uint8_t {
 
 template <typename Proxy> class UsartDmaTransport {
 public:
-  static constexpr size_t RX_BUFFER_SIZE = 256;
+  static constexpr size_t RX_BUFFER_SIZE = 8192;
 
   UsartDmaTransport() = default;
   ~UsartDmaTransport() { stop(); }

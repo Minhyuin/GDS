@@ -1,0 +1,19 @@
+{
+  "recommendations": [
+    "llvm-vs-code-extensions.vscode-clangd",
+    "xaver.clang-format",
+    "tomoki1207.pdf",
+    "marus25.cortex-Debug",
+    "wayou.vscode-todo-highlight",
+    "GitHub.copilot-chat",
+    "github.vscode-github-actions",
+    "eamodio.gitlens",
+    "shd101wyy.markdown-preview-enhanced",
+    "mcu-debug.rtos-views",
+    "ms-vscode.cmake-tools",
+    "naumovs.color-highlight",
+  ],
+  "unwantedRecommendations": [
+    "ms-vscode.cpptools"
+  ]
+}

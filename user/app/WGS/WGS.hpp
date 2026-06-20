@@ -35,11 +35,12 @@ private:
 
   using Usart1 = BSP::UsartProxy<BSP::Usart1HandleProvider>;
   using Tim6 = BSP::TimProxy<BSP::Tim6HandleProvider>;
+  using Tim7 = BSP::TimProxy<BSP::Tim7HandleProvider>;
 
   using Parser = PROTOCOL::ProtocolParser<PROTOCOL::GdsFrameV1Policy_s>;
 
   using Transport = COMM::UsartDmaTransport<Usart1>;
-  using DacPlayer = OUTPUT::DacWavePlayer<BSP::DacProxy, Tim6>;
+  using DacPlayer = OUTPUT::DacWavePlayer<BSP::DacProxy, Tim6, Tim7>;
 
   using ProtocolService =
       COMM::ProtocolService<Transport, Parser, PROTOCOL::GdsFrameV1Policy_s>;
@@ -61,7 +62,7 @@ private:
   OUTPUT::WaveformStore waveformStore_;
   DacPlayer dacPlayer_;
   OutputController output_;
-  std::array<PROTOCOL::DacCodePoint_s, MAX_SEQUENCE_POINTS> decodeScratch_{};
+  std::array<PROTOCOL::DacSample_s, MAX_SEQUENCE_POINTS> decodeScratch_{};
   StaticTask_t taskControlBlock_{};
   StackType_t taskStack_[TASK_STACK_WORDS]{};
   TaskHandle_t taskHandle_{nullptr};

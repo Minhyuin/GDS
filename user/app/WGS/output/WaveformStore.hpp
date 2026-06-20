@@ -11,20 +11,17 @@ namespace APP::WGS::OUTPUT {
 
 class WaveformStore {
 public:
-  static constexpr size_t CAPACITY = 512;
+  static constexpr size_t PERIOD_SAMPLE_COUNT = 1000;
 
-  APP::WGS::PROTOCOL::Result_s push(std::span<const DacFrame_s> _frames);
-  bool popFromIsr(DacFrame_s &_frame);
-  void clear();
-  size_t size() const;
-  size_t writable() const;
+  APP::WGS::PROTOCOL::Result_s
+  setSequence(OutputChannel_e _channel, std::span<const DacSample_s> _samples);
+
+  std::span<const uint16_t> channelSamples(OutputChannel_e _channel) const;
+  std::span<uint16_t> channelSamples(OutputChannel_e _channel);
 
 private:
-  size_t next(size_t _index) const { return (_index + 1U) % CAPACITY; }
-
-  DacFrame_s frames_[CAPACITY]{};
-  volatile size_t head_{0};
-  volatile size_t tail_{0};
+  ChannelPeriodBuffer_s<PERIOD_SAMPLE_COUNT> ch1_{};
+  ChannelPeriodBuffer_s<PERIOD_SAMPLE_COUNT> ch2_{};
 };
 
 } // namespace APP::WGS::OUTPUT

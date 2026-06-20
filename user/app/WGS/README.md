@@ -1,8 +1,15 @@
 # WGS - Waveform Generation System
 
-WGS 是固件中的波形生成系统模块，负责接收上位机命令、解析协议帧、控制输出模式，并最终通过 DAC 输出振镜控制电压。
+WGS 是固件中的波形生成系统模块，负责接收上位机命令、解析协议帧、控制 DAC 周期波形表，并最终通过 DAC 输出控制电压。
 
-当前 WGS 运行在 FreeRTOS 上。USART1 receive-to-idle 回调只负责通知 WGS 任务，实际的数据消费、协议解析、命令处理、输出 FIFO 写入和应答发送都在 WGS worker task 中完成。DAC 真实输出由 TIM6 TRGO 触发 DAC + DMA 完成，CPU 只在 DMA 半传输/全传输回调中补充下一半播放缓冲。
+当前 WGS 运行在 FreeRTOS 上。USART1 receive-to-idle 回调只负责通知 WGS 任务，实际的数据消费、协议解析、命令处理、DAC 周期表更新和应答发送都在 WGS worker task 中完成。DAC 输出由硬件定时器触发：
+
+```text
+CH1 / DAC_OUT1 <- TIM6 TRGO
+CH2 / DAC_OUT2 <- TIM7 TRGO
+```
+
+每个通道拥有 1000 个周期样本。DAC circular DMA 扫描这 1000 个样本，因此 DMA 区域本身就是一个波形周期。
 
 ## 模块边界
 
@@ -35,9 +42,12 @@ APP::WGS::WGSManager
 
 WGS 不直接持有 HAL 句柄。底层外设访问通过 BSP proxy 注入：
 
-- `BSP::UsartProxy<BSP::Usart1HandleProvider>`
-- `BSP::DacProxy`
-- `BSP::TimProxy<BSP::Tim6HandleProvider>`
+```text
+BSP::UsartProxy<BSP::Usart1HandleProvider>
+BSP::DacProxy
+BSP::TimProxy<BSP::Tim6HandleProvider>
+BSP::TimProxy<BSP::Tim7HandleProvider>
+```
 
 ## RTOS 行为
 
@@ -53,90 +63,51 @@ xTaskCreateStatic(..., "WGS_RX", ...);
 ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
 ```
 
-没有接收事件时，WGS 任务不会轮询占用 CPU。
-
-USART1 receive-to-idle 回调应只调用：
-
-```cpp
-notifyWgsRxFromIsr();
-```
-
-该函数会通知 WGS 任务。真正的 RX buffer 消费、协议解析和应答发送都在任务上下文中执行。
-
-当前 `WGS.cc` 提供 `HAL_UARTEx_RxEventCallback()`，当回调来自 `USART1` 时会调用 `notifyWgsRxFromIsr()`。底层 transport 通过 `HAL_UARTEx_ReceiveToIdle_DMA()` 启动接收，因此短帧发送完成后会由 USART IDLE 事件唤醒 WGS worker task。
-
-## 串口传输
-
-当前默认物理链路是 USART1 + DMA。
-
-上位机需要发送二进制帧，不建议使用 ASCII、CSV 或文本命令作为主协议。
-
-当前协议是小端字段为主，帧头尽量压缩以降低串口开销：
-
-```text
-SOF: 0xA5
-```
+没有接收事件时，WGS 任务不会轮询占用 CPU。USART1 receive-to-idle 回调调用 `notifyWgsRxFromIsr()` 唤醒任务。真正的 RX buffer 消费、协议解析和应答发送都在任务上下文中执行。
 
 ## 协议帧格式
 
-```text
-+--------+---------+---------+
-| SOF    | Header  | Payload |
-+--------+---------+---------+
-
-SOF:
-  1 byte
-  fixed: 0xA5
-
-Header:
-  type:    1 byte
-  length:  2 bytes, little-endian
-
-Payload:
-  length bytes
-```
-
-完整字节布局：
+当前协议使用小端字段，帧头尽量压缩以降低串口开销。
 
 ```text
 offset  size  field
 0       1     SOF = 0xA5
 1       1     frame type
-2       2     payload length, little-endian
+2       2     payload length, uint16 little-endian
 4       N     payload
 ```
 
-当前版本暂不使用 CRC，也不携带 version 和 seq。CRC 模块保留在固件中，后续可通过 frame policy 重新启用。
+当前版本暂不使用 CRC，也不携带 version 和 seq。
 
 当前最大 payload 长度：
 
 ```text
-2043 bytes
+4004 bytes
+```
+
+这正好可以容纳一个通道 1000 个 float32 电压样本：
+
+```text
+command(1) + channel(1) + count(2) + 1000 * float32(4) = 4004
 ```
 
 ## Frame Type
 
 ```cpp
-enum class FrameType_e : uint8_t {
-  COMMAND = 0x01,
-  ACK     = 0x02,
-  NACK    = 0x03,
-  EVENT   = 0x04,
-  STATUS  = 0x05,
-};
+COMMAND = 0x01
+ACK     = 0x02
+NACK    = 0x03
+EVENT   = 0x04
+STATUS  = 0x05
 ```
 
-上位机发送命令时，`frame type` 应为：
+上位机发送命令时，`frame type` 应为 `0x01 COMMAND`。
 
-```text
-0x01 COMMAND
-```
+## Channel
 
-固件返回应答时，`frame type` 为：
-
-```text
-0x02 ACK
-0x03 NACK
+```cpp
+CH1 = 0x01  // DAC_OUT1, TIM6
+CH2 = 0x02  // DAC_OUT2, TIM7
 ```
 
 ## Command Payload
@@ -150,29 +121,15 @@ payload[0] = command type
 当前已实现：
 
 ```cpp
-PING       = 0x00
-POINT_SET = 0x10
+PING         = 0x00
+POINT_SET    = 0x10
 SEQUENCE_SET = 0x20
-```
-
-协议已预留但尚未完成 payload 解码和行为实现：
-
-```cpp
-GET_STATUS      = 0x30
-EMERGENCY_STOP  = 0x7F
-```
-
-未实现命令当前会返回：
-
-```text
-NACK / UNSUPPORTED_COMMAND
+TIMER_SET    = 0x40
 ```
 
 ## PING
 
 用途：检查通信链路和协议解析是否正常。
-
-Payload：
 
 ```text
 offset  size  field
@@ -182,23 +139,20 @@ offset  size  field
 示例：
 
 ```text
-COMMAND frame
-payload = 00
+A5 01 01 00 00
 ```
 
 成功时固件返回 `ACK / DONE`。
 
 ## POINT_SET
 
-用途：直接设置输出电压，当前用于单点模式。
-
-Payload：
+用途：使某个通道持续输出目标电压。固件会停止该通道 DAC DMA，直接写入 DAC value，并确保对应 timer 运行，以便外部触发配置能把 DHR 刷新到实际输出寄存器。该模式不会启动 DMA 扫描。
 
 ```text
 offset  size  field
 0       1     command type = 0x10
-1       4     x voltage, float32 little-endian, unit = V
-5       4     y voltage, float32 little-endian, unit = V
+1       1     channel
+2       4     voltage, float32 little-endian, unit = V
 ```
 
 电压范围：
@@ -213,69 +167,75 @@ offset  size  field
 dac_code = round(voltage_v * 4095 / 3.3)
 ```
 
-若任一通道电压为 `NaN`、`Inf`、负数或超过 `3.3V`，固件会钳位到 `0.0..3.3V` 范围内，不返回范围错误。
+若电压为 `NaN`、`Inf`、负数或超过 `3.3V`，固件会钳位到 `0.0..3.3V` 范围内，不返回范围错误。
 
-示例：设置 X=1.65V，Y=3.30V：
+示例：设置 CH1 = 1.5V：
 
 ```text
-payload:
-10 33 33 D3 3F 33 33 53 40
-
-解释:
-10            POINT_SET
-33 33 D3 3F   x = float32 little-endian 1.65V
-33 33 53 40   y = float32 little-endian 3.30V
+A5 01 06 00 10 01 00 00 C0 3F
 ```
-
-成功时固件返回 `ACK / DONE`。
 
 ## SEQUENCE_SET
 
-用途：一次发送多个输出点，提高串口帧的有效数据效率。序列模式和单点模式共用同一个输出 FIFO，收到的数据会先转换为 12 位 DAC code，再进入缓冲区。DAC 播放器使用 circular DMA 双半缓冲；TIM6 只作为 DAC 触发定时器，DMA half/full 回调负责从 FIFO 补料。
-
-Payload：
+用途：写入某个通道的一周期波形。每帧只操作一个通道。
 
 ```text
-offset  size        field
-0       1           command type = 0x20
-1       2           point count N, uint16 little-endian
-3       N * 8       repeated points
+offset  size      field
+0       1         command type = 0x20
+1       1         channel
+2       2         sample count N, uint16 little-endian
+4       N * 4     voltage samples, float32 little-endian, unit = V
 ```
 
-单个点格式：
+约束：
 
 ```text
-offset  size  field
-0       4     x voltage, float32 little-endian, unit = V
-4       4     y voltage, float32 little-endian, unit = V
-```
-
-当前约束：
-
-```text
-1 <= N <= 255
-payload length = 3 + N * 8
+1 <= N <= 1000
+payload length = 4 + N * 4
 voltage clamp range = 0.0..3.3V
 ```
 
-如果 `N = 0`、`N > 255` 或 payload 长度不匹配，固件返回 `NACK / BAD_LENGTH`。
-
-如果共享输出 FIFO 剩余空间不足以放下本帧全部点，固件不会做部分写入，而是返回：
+如果 `N < 1000`，固件用最后一个样本填满该通道周期表剩余位置：
 
 ```text
-NACK / BUFFER_FULL
+periodBuffer[N..999] = periodBuffer[N - 1]
 ```
 
-当 DAC DMA 补料速度快于上位机写入速度，导致 FIFO 为空时，固件用上一次输出值填充 DMA 播放缓冲，不主动清零、不停止 TIM6。
+如果 `N = 0`、`N > 1000` 或 payload 长度不匹配，固件返回 `NACK / BAD_LENGTH`。
 
-示例：一次发送两个点 `(1.65V, 1.65V)` 和 `(0.0V, 3.3V)`：
+示例：向 CH2 写入两个样本 `1.65V, 3.30V`，剩余 998 个点保持 `3.30V`：
 
 ```text
 payload:
-20 02 00
-33 33 D3 3F 33 33 D3 3F
-00 00 00 00 33 33 53 40
+20 02 02 00
+33 33 D3 3F
+33 33 53 40
 ```
+
+## TIMER_SET
+
+用途：修改某个通道的 DAC 采样率。CH1 对应 TIM6，CH2 对应 TIM7。
+
+```text
+offset  size  field
+0       1     command type = 0x40
+1       1     channel
+2       4     sample_rate_hz, float32 little-endian
+```
+
+`sample_rate_hz` 表示 DAC 采样频率，不是波形重复频率。因为每个周期固定 1000 点：
+
+```text
+waveform_frequency_hz = sample_rate_hz / 1000
+```
+
+第一版固件限制：
+
+```text
+1 Hz <= sample_rate_hz <= 200000 Hz
+```
+
+频率越界时返回 `NACK / OUT_OF_RANGE`，不会钳位。
 
 ## ACK / NACK Payload
 
@@ -313,100 +273,27 @@ UNDERRUN            = 0x0A
 TRANSPORT_BUSY      = 0x0B
 ```
 
-成功应答：
+成功应答示例：
 
 ```text
-frame type = ACK
-payload    = 01 00
+A5 02 02 00 01 00
 ```
 
-失败应答：
+含义：
 
 ```text
-frame type = NACK
-payload    = 80 error_code
+ACK, payload length = 2, status = DONE, detail = NONE
 ```
 
-## 上位机发送流程
+## Host 端建议
 
-上位机建议按以下流程通信：
+上位机每发送一个命令帧后，应等待 ACK/NACK，再发送下一帧。推荐使用 `test/wgs_matlab` 中的 MATLAB client：
 
-```text
-1. 组帧
-2. 发送 COMMAND frame
-3. 等待 ACK 或 NACK
-4. 若 NACK，根据 detail 字段判断错误原因
-5. 若超时，可重发或重新同步
+```matlab
+client = wgs.connect("COM43");
+cleanupObj = onCleanup(@() client.close());
+
+client.setSampleRate(1, 100000);
+client.sequenceSet(1, ch1Samples);
+client.sequenceSet(2, ch2Samples);
 ```
-
-由于当前帧头不含 `seq`，上位机应采用一帧一应答的顺序通信策略：发送下一帧前先等待上一帧的 ACK/NACK，避免多帧并发时无法匹配应答。
-
-收到长度错误或未知命令时，固件会尝试返回 NACK。若 SOF 丢失或帧损坏严重，解析器会重新寻找下一个 SOF。
-
-## MATLAB / PC 端组帧伪代码
-
-```text
-payload = [command bytes...]
-
-header:
-  type    = COMMAND
-  length  = uint16 little-endian payload.length
-
-frame = [
-  0xA5,
-  header,
-  payload
-]
-```
-
-## 当前能力状态
-
-已实现：
-
-- USART1 receive-to-idle DMA RX 启动
-- WGS 静态 FreeRTOS worker task
-- ISR 通知入口 `notifyWgsRxFromIsr()`
-- `USART1` 的 `HAL_UARTEx_RxEventCallback()` 通知入口
-- 阻塞等待接收事件
-- RX 数据消费
-- 协议帧解析
-- `PING`
-- `POINT_SET`
-- `SEQUENCE_SET`
-- ACK/NACK 应答
-- POINT_SET / SEQUENCE_SET 到共享 FIFO 的写入路径
-- TIM6 TRGO 触发 DAC 转换
-- DAC circular DMA 双半缓冲播放
-- CH1 DMA half/full 回调从 FIFO 补料，并同步填充 CH1/CH2 播放缓冲
-- FIFO 为空时用上一次输出值填充 DMA 缓冲
-- FIFO 空间不足时整帧拒绝并返回 `BUFFER_FULL`
-
-尚未完成：
-
-- USB CDC transport 接入
-- 流式播放双缓冲填充策略
-- 角度到电压或 DAC code 的转换
-- 上位机 MATLAB SDK
-
-## ISR 接入建议
-
-接入 UART RX/IDLE 回调时，应保持 ISR 极短：
-
-```cpp
-extern "C" void notifyWgsRxFromIsr();
-
-void Some_UART_Rx_Callback(...)
-{
-  notifyWgsRxFromIsr();
-}
-```
-
-不要在 ISR 中做：
-
-- 协议解析
-- DAC 输出
-- ACK/NACK 发送
-- 日志打印
-- 动态内存分配
-
-这些都应留给 WGS worker task。

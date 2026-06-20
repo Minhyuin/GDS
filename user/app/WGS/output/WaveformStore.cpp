@@ -3,50 +3,47 @@
 namespace APP::WGS::OUTPUT {
 
 APP::WGS::PROTOCOL::Result_s
-WaveformStore::push(std::span<const DacFrame_s> _frames) {
-  if (_frames.empty()) {
+WaveformStore::setSequence(OutputChannel_e _channel,
+                           std::span<const DacSample_s> _samples) {
+  if (_samples.empty() || _samples.size() > PERIOD_SAMPLE_COUNT) {
     return APP::WGS::PROTOCOL::Result_s::fail(
         APP::WGS::PROTOCOL::ErrorCode_e::BAD_LENGTH);
   }
 
-  if (_frames.size() > writable()) {
-    return APP::WGS::PROTOCOL::Result_s::fail(
-        APP::WGS::PROTOCOL::ErrorCode_e::BUFFER_FULL);
+  auto destination = channelSamples(_channel);
+  for (size_t i = 0; i < _samples.size(); ++i) {
+    destination[i] = _samples[i].value;
   }
 
-  for (const auto &frame : _frames) {
-    frames_[head_] = frame;
-    head_ = next(head_);
+  const uint16_t last = destination[_samples.size() - 1U];
+  for (size_t i = _samples.size(); i < PERIOD_SAMPLE_COUNT; ++i) {
+    destination[i] = last;
   }
 
   return APP::WGS::PROTOCOL::Result_s::success();
 }
 
-bool WaveformStore::popFromIsr(DacFrame_s &_frame) {
-  if (head_ == tail_) {
-    return false;
+std::span<const uint16_t>
+WaveformStore::channelSamples(OutputChannel_e _channel) const {
+  switch (_channel) {
+  case OutputChannel_e::CH1:
+    return std::span<const uint16_t>(ch1_.samples.data(), ch1_.samples.size());
+  case OutputChannel_e::CH2:
+    return std::span<const uint16_t>(ch2_.samples.data(), ch2_.samples.size());
   }
 
-  _frame = frames_[tail_];
-  tail_ = next(tail_);
-  return true;
+  return std::span<const uint16_t>(ch1_.samples.data(), ch1_.samples.size());
 }
 
-void WaveformStore::clear() {
-  tail_ = head_;
-}
-
-size_t WaveformStore::size() const {
-  const size_t head = head_;
-  const size_t tail = tail_;
-  if (head >= tail) {
-    return head - tail;
+std::span<uint16_t> WaveformStore::channelSamples(OutputChannel_e _channel) {
+  switch (_channel) {
+  case OutputChannel_e::CH1:
+    return std::span<uint16_t>(ch1_.samples.data(), ch1_.samples.size());
+  case OutputChannel_e::CH2:
+    return std::span<uint16_t>(ch2_.samples.data(), ch2_.samples.size());
   }
-  return CAPACITY - tail + head;
-}
 
-size_t WaveformStore::writable() const {
-  return CAPACITY - size() - 1U;
+  return std::span<uint16_t>(ch1_.samples.data(), ch1_.samples.size());
 }
 
 } // namespace APP::WGS::OUTPUT

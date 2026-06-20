@@ -4,31 +4,27 @@
 #include "Result.hpp"
 #include "WaveformStore.hpp"
 
-#include <array>
+#include <span>
 
 namespace APP::WGS::OUTPUT {
 
-template <typename DacHardware, typename TimerHardware> class DacWavePlayer {
+template <typename DacHardware, typename DMAch1Hardware,
+          typename DMAch2Hardware>
+class DacWavePlayer {
 public:
-  static constexpr size_t DMA_HALF_FRAMES = 64;
-  static constexpr size_t DMA_TOTAL_FRAMES = DMA_HALF_FRAMES * 2U;
+  static constexpr size_t PERIOD_SAMPLE_COUNT =
+      WaveformStore::PERIOD_SAMPLE_COUNT;
+  static constexpr float MIN_SAMPLE_RATE_HZ = 1.0F;
+  static constexpr float MAX_SAMPLE_RATE_HZ = 1000000.0F;
 
   DacWavePlayer() = default;
   ~DacWavePlayer() { stop(); }
 
   APP::WGS::PROTOCOL::Result_s start(WaveformStore &_store) {
-    refillHalf(BufferHalf_e::FIRST, _store);
-    refillHalf(BufferHalf_e::SECOND, _store);
-
-    if (DacHardware::startDma(DAC_CHANNEL_1, xDmaBuffer_.data(),
-                              xDmaBuffer_.size()) != HAL_OK) {
+    if (startChannel(OutputChannel_e::CH1, _store) != HAL_OK) {
       return fail();
     }
-    if (DacHardware::startDma(DAC_CHANNEL_2, yDmaBuffer_.data(),
-                              yDmaBuffer_.size()) != HAL_OK) {
-      return fail();
-    }
-    if (TimerHardware::start() != HAL_OK) {
+    if (startChannel(OutputChannel_e::CH2, _store) != HAL_OK) {
       return fail();
     }
 
@@ -39,35 +35,37 @@ public:
   void stop() {
     DacHardware::stopDma(DAC_CHANNEL_1);
     DacHardware::stopDma(DAC_CHANNEL_2);
-    TimerHardware::stop();
+    DMAch1Hardware::stop();
+    DMAch2Hardware::stop();
     state_ = PlayerState_e::STOPPED;
   }
 
-  void refillHalf(BufferHalf_e _half, WaveformStore &_store) {
-    const size_t offset =
-        _half == BufferHalf_e::FIRST ? 0U : DMA_HALF_FRAMES;
-    for (size_t i = 0; i < DMA_HALF_FRAMES; ++i) {
-      DacFrame_s frame{};
-      if (_store.popFromIsr(frame)) {
-        lastFrame_ = frame;
-      }
-      xDmaBuffer_[offset + i] = lastFrame_.x;
-      yDmaBuffer_[offset + i] = lastFrame_.y;
+  APP::WGS::PROTOCOL::Result_s reloadChannel(OutputChannel_e _channel,
+                                             WaveformStore &_store) {
+    if (stopChannel(_channel) != HAL_OK) {
+      return fail();
     }
+
+    if (startChannel(_channel, _store) != HAL_OK) {
+      return fail();
+    }
+
     state_ = PlayerState_e::PLAYING;
+    return APP::WGS::PROTOCOL::Result_s::success();
   }
 
-  APP::WGS::PROTOCOL::Result_s hold(DacFrame_s _frame) {
-    if (DacHardware::setDacValue(DAC_CHANNEL_1, _frame.x) != HAL_OK) {
+  APP::WGS::PROTOCOL::Result_s holdChannel(OutputChannel_e _channel,
+                                           uint16_t _sample) {
+    if (DacHardware::stopDma(dacChannel(_channel)) != HAL_OK) {
       return fail();
     }
-    if (DacHardware::setDacValue(DAC_CHANNEL_2, _frame.y) != HAL_OK) {
+    if (DacHardware::setDacValue(dacChannel(_channel), _sample) != HAL_OK) {
       return fail();
     }
-    if (DacHardware::startDac(DAC_CHANNEL_1) != HAL_OK) {
+    if (DacHardware::startDac(dacChannel(_channel)) != HAL_OK) {
       return fail();
     }
-    if (DacHardware::startDac(DAC_CHANNEL_2) != HAL_OK) {
+    if (startTimer(_channel) != HAL_OK) {
       return fail();
     }
 
@@ -75,18 +73,66 @@ public:
     return APP::WGS::PROTOCOL::Result_s::success();
   }
 
+  APP::WGS::PROTOCOL::Result_s setSampleRate(OutputChannel_e _channel,
+                                             float _sampleRateHz) {
+    if (_sampleRateHz < MIN_SAMPLE_RATE_HZ ||
+        _sampleRateHz > MAX_SAMPLE_RATE_HZ) {
+      return APP::WGS::PROTOCOL::Result_s::fail(
+          APP::WGS::PROTOCOL::ErrorCode_e::OUT_OF_RANGE);
+    }
+
+    const auto status =
+        _channel == OutputChannel_e::CH1
+            ? DMAch1Hardware::setUpdateFrequencyHz(_sampleRateHz)
+            : DMAch2Hardware::setUpdateFrequencyHz(_sampleRateHz);
+    if (status != HAL_OK) {
+      return fail();
+    }
+
+    return APP::WGS::PROTOCOL::Result_s::success();
+  }
+
   PlayerState_e state() const { return state_; }
 
 private:
+  static uint32_t dacChannel(OutputChannel_e _channel) {
+    return _channel == OutputChannel_e::CH1 ? DAC_CHANNEL_1 : DAC_CHANNEL_2;
+  }
+
+  static HAL_StatusTypeDef startTimer(OutputChannel_e _channel) {
+    return _channel == OutputChannel_e::CH1 ? DMAch1Hardware::start()
+                                            : DMAch2Hardware::start();
+  }
+
+  static HAL_StatusTypeDef stopTimer(OutputChannel_e _channel) {
+    return _channel == OutputChannel_e::CH1 ? DMAch1Hardware::stop()
+                                            : DMAch2Hardware::stop();
+  }
+
+  HAL_StatusTypeDef startChannel(OutputChannel_e _channel,
+                                 WaveformStore &_store) {
+    auto samples = _store.channelSamples(_channel);
+    const auto dacStatus =
+        DacHardware::startDma(dacChannel(_channel), samples.data(),
+                              static_cast<uint32_t>(samples.size()));
+    if (dacStatus != HAL_OK) {
+      return dacStatus;
+    }
+    return startTimer(_channel);
+  }
+
+  HAL_StatusTypeDef stopChannel(OutputChannel_e _channel) {
+    const auto timerStatus = stopTimer(_channel);
+    const auto dacStatus = DacHardware::stopDma(dacChannel(_channel));
+    return dacStatus != HAL_OK ? dacStatus : timerStatus;
+  }
+
   APP::WGS::PROTOCOL::Result_s fail() {
     state_ = PlayerState_e::FAULT;
     return APP::WGS::PROTOCOL::Result_s::fail(
         APP::WGS::PROTOCOL::ErrorCode_e::INVALID_STATE);
   }
 
-  std::array<uint32_t, DMA_TOTAL_FRAMES> xDmaBuffer_{};
-  std::array<uint32_t, DMA_TOTAL_FRAMES> yDmaBuffer_{};
-  DacFrame_s lastFrame_{};
   PlayerState_e state_{PlayerState_e::STOPPED};
 };
 

@@ -17,33 +17,38 @@ fprintf("WGS UART demo on %s @ %d baud\n", ...
 reply = client.ping();
 wgs.printReply("PING", reply);
 
-reply = client.pointSet(1.65, 1.65);
-wgs.printReply("POINT_SET center", reply);
+% reply = client.setWaveFrequency(1, 100);
+% wgs.printReply("CH1 sample rate", reply);
 
-pause(0.05);
-reply = client.pointSet(0.0, 3.3);
-wgs.printReply("POINT_SET corner", reply);
+reply = client.setWaveFrequency(2, 1000);
+wgs.printReply("CH2 sample rate", reply);
 
-pointCount = 128;
-t = linspace(0, 2*pi, pointCount).';
-points = [
-    1.65 + 1.40 * sin(t), ...
-    1.65 + 1.40 * sin(2 * t + pi / 2)
-];
+% reply = client.pointSet(1, 1.65);
+% wgs.printReply("POINT_SET CH1 center", reply);
 
-reply = client.sequenceSet(points);
-wgs.printReply("SEQUENCE_SET 128 points", reply);
+% reply = client.pointSet(2, 1.65);
+% wgs.printReply("POINT_SET CH2 center", reply);
 
-sendMaxFrameExample = false;
-if sendMaxFrameExample
-    pointCount = 255;
-    t = linspace(0, 2*pi, pointCount).';
-    points = [
-        1.65 + 1.50 * sin(t), ...
-        1.65 + 1.50 * cos(t)
-    ];
-    reply = client.sequenceSet(points);
-    wgs.printReply("SEQUENCE_SET 255 points", reply);
-end
+% pause(0.05);
+% reply = client.pointSet(1, 3.3);
+% wgs.printReply("POINT_SET CH1 high", reply);
+
+% reply = client.pointSet(2, 3.3);
+% wgs.printReply("POINT_SET CH2 high", reply);
+
+sampleCount = 1000;
+t = (0:sampleCount-1).' * (2*pi / sampleCount);
+ch1 = 1.65 + 1.40 * sin(t);
+ch2 = ch1;
+
+% reply = client.sequenceSet(1, ch1);
+% wgs.printReply("SEQUENCE_SET CH1 1000 samples", reply);
+
+reply = client.sequenceSet(2, ch2);
+wgs.printReply("SEQUENCE_SET CH2 1000 samples", reply);
+
+% shortSequence = 1.65 + 1.0 * sin(linspace(0, pi, 128));
+% reply = client.sequenceSet(1, shortSequence);
+% wgs.printReply("SEQUENCE_SET CH1 padded 128 samples", reply);
 
 disp("Demo finished.");

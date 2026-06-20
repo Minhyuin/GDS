@@ -41,6 +41,13 @@ enum class OutputState_e : uint8_t {
   FAULT,
 };
 
+inline OutputChannel_e
+toOutputChannel(APP::WGS::PROTOCOL::Channel_e _channel) {
+  return _channel == APP::WGS::PROTOCOL::Channel_e::CH1
+             ? OutputChannel_e::CH1
+             : OutputChannel_e::CH2;
+}
+
 template <typename Player_s> struct OutputContext_s {
   Player_s *player{nullptr};
   WaveformStore *store{nullptr};
@@ -57,17 +64,14 @@ public:
   APP::WGS::PROTOCOL::Result_s
   handle(OutputContext_s<Player_s> &_ctx,
          const APP::WGS::PROTOCOL::PointSetCommand_s &_cmd) {
-    if (_ctx.store == nullptr) {
+    if (_ctx.player == nullptr) {
       _ctx.state = OutputState_e::FAULT;
       return APP::WGS::PROTOCOL::Result_s::fail(
           APP::WGS::PROTOCOL::ErrorCode_e::INVALID_STATE);
     }
 
-    const DacFrame_s frame{
-        .x = voltageToDacCode(_cmd.xVoltage),
-        .y = voltageToDacCode(_cmd.yVoltage),
-    };
-    auto result = _ctx.store->push(std::span<const DacFrame_s>(&frame, 1));
+    const auto channel = toOutputChannel(_cmd.channel);
+    auto result = _ctx.player->holdChannel(channel, _cmd.sample.value);
     if (result.ok()) {
       _ctx.state = OutputState_e::BUFFERING;
     }
@@ -77,27 +81,41 @@ public:
   APP::WGS::PROTOCOL::Result_s
   handle(OutputContext_s<Player_s> &_ctx,
          const APP::WGS::PROTOCOL::SequenceSetCommand_s &_cmd) {
-    if (_ctx.store == nullptr) {
+    if (_ctx.store == nullptr || _ctx.player == nullptr) {
       _ctx.state = OutputState_e::FAULT;
       return APP::WGS::PROTOCOL::Result_s::fail(
           APP::WGS::PROTOCOL::ErrorCode_e::INVALID_STATE);
     }
 
-    if (_cmd.points.empty()) {
+    if (_cmd.samples.empty()) {
       return APP::WGS::PROTOCOL::Result_s::fail(
           APP::WGS::PROTOCOL::ErrorCode_e::BAD_LENGTH);
     }
 
-    if (_cmd.points.size() > _ctx.store->writable()) {
-      return APP::WGS::PROTOCOL::Result_s::fail(
-          APP::WGS::PROTOCOL::ErrorCode_e::BUFFER_FULL);
+    const auto channel = toOutputChannel(_cmd.channel);
+    auto result = _ctx.store->setSequence(channel, _cmd.samples);
+    if (!result.ok()) {
+      return result;
     }
 
-    auto result = _ctx.store->push(_cmd.points);
+    result = _ctx.player->reloadChannel(channel, *_ctx.store);
     if (result.ok()) {
       _ctx.state = OutputState_e::BUFFERING;
     }
     return result;
+  }
+
+  APP::WGS::PROTOCOL::Result_s
+  handle(OutputContext_s<Player_s> &_ctx,
+         const APP::WGS::PROTOCOL::TimerSetCommand_s &_cmd) {
+    if (_ctx.player == nullptr) {
+      _ctx.state = OutputState_e::FAULT;
+      return APP::WGS::PROTOCOL::Result_s::fail(
+          APP::WGS::PROTOCOL::ErrorCode_e::INVALID_STATE);
+    }
+
+    return _ctx.player->setSampleRate(toOutputChannel(_cmd.channel),
+                                      _cmd.sampleRateHz);
   }
 
   template <typename Command_s>

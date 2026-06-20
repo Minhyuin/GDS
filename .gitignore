@@ -1,7 +1,11 @@
 build/
 
 .cache/
-.vscode/
+# .vscode/
+
+findings.md
+progress.md
+task_plan.md
 
 *.code-workspace
 

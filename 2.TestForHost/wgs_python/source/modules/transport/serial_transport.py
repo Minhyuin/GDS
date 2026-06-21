@@ -11,10 +11,11 @@ def list_serial_ports():
 
 
 class SerialTransport:
-    def __init__(self, port, baudrate=115200, timeout=0.2):
+    def __init__(self, port, baudrate=115200, timeout=0.2, read_timeout=None, write_timeout=3.0):
         self.port = port
         self.baudrate = int(baudrate)
-        self.timeout = float(timeout)
+        self.read_timeout = float(timeout if read_timeout is None else read_timeout)
+        self.write_timeout = float(write_timeout)
         self._serial = None
 
     @property
@@ -27,8 +28,8 @@ class SerialTransport:
         self._serial = serial.Serial(
             port=self.port,
             baudrate=self.baudrate,
-            timeout=self.timeout,
-            write_timeout=self.timeout,
+            timeout=self.read_timeout,
+            write_timeout=self.write_timeout,
             dsrdtr=False,
             rtscts=False,
         )
@@ -44,8 +45,16 @@ class SerialTransport:
 
     def write(self, data):
         self._require_open()
-        self._serial.write(bytes(data))
+        data = bytes(data)
+        self._serial.write_timeout = self.write_timeout_for(data)
+        written = self._serial.write(data)
         self._serial.flush()
+        if written != len(data):
+            raise TimeoutError(f"Serial write incomplete: {written}/{len(data)} bytes")
+
+    def write_timeout_for(self, data):
+        wire_time = len(bytes(data)) * 10.0 / float(self.baudrate)
+        return max(self.write_timeout, wire_time * 2.0 + 0.1)
 
     def flush_input(self):
         if self.is_open:

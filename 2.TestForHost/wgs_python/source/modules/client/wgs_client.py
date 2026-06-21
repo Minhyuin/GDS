@@ -5,8 +5,13 @@ from ..transport.serial_transport import SerialTransport
 
 
 class WgsClient:
-    def __init__(self, port, baudrate=115200, timeout=1.0):
-        self.transport = SerialTransport(port=port, baudrate=baudrate, timeout=min(timeout, 0.2))
+    def __init__(self, port, baudrate=115200, timeout=1.0, read_timeout=0.05, write_timeout=3.0):
+        self.transport = SerialTransport(
+            port=port,
+            baudrate=baudrate,
+            read_timeout=read_timeout,
+            write_timeout=write_timeout,
+        )
         self.reply_timeout = float(timeout)
         self.last_tx = b""
         self.last_rx = b""

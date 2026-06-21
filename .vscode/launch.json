@@ -42,7 +42,7 @@
       "servertype": "openocd",
       "configFiles": [
         "${workspaceFolder}/1.Fireware/tools/openocd/dap.cfg",
-        "${workspaceFolder}/1.Fireware/tools/openocd/target/stm32f1x.cfg"
+        "target/stm32f1x.cfg"
       ],
       "liveWatch": {
         "enabled": true,
@@ -82,7 +82,7 @@
       "servertype": "openocd",
       "configFiles": [
         "${workspaceFolder}/1.Fireware/tools/openocd/stlink.cfg",
-        "${workspaceFolder}/1.Fireware/tools/openocd/target/stm32f1x.cfg"
+        "target/stm32f1x.cfg"
       ],
       "liveWatch": {
         "enabled": true,

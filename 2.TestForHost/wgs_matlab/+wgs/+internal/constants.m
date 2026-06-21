@@ -7,6 +7,7 @@ function C = constants()
     C.FRAME_NACK = hex2dec("03");
 
     C.CMD_PING = hex2dec("00");
+    C.CMD_SYNC = hex2dec("01");
     C.CMD_POINT_SET = hex2dec("10");
     C.CMD_SEQUENCE_SET = hex2dec("20");
     C.CMD_TIMER_SET = hex2dec("40");

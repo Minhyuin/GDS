@@ -198,6 +198,12 @@ PROTOCOL::Result_s WGSManager::decodeCommand(const PROTOCOL::Frame_s &_frame,
     }
     _command = PROTOCOL::PingCommand_s{};
     return PROTOCOL::Result_s::success();
+  case PROTOCOL::CommandType_e::SYNC:
+    if (_frame.payload.size() != 1) {
+      return PROTOCOL::Result_s::fail(PROTOCOL::ErrorCode_e::BAD_LENGTH);
+    }
+    _command = PROTOCOL::SyncCommand_s{};
+    return PROTOCOL::Result_s::success();
   case PROTOCOL::CommandType_e::POINT_SET: {
     if (_frame.payload.size() != PROTOCOL::POINT_SET_PAYLOAD_SIZE) {
       return PROTOCOL::Result_s::fail(PROTOCOL::ErrorCode_e::BAD_LENGTH);

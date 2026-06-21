@@ -8,6 +8,10 @@ def ping_frame():
     return build_frame(FrameType.COMMAND, bytes([CommandType.PING]))
 
 
+def sync_frame():
+    return build_frame(FrameType.COMMAND, bytes([CommandType.SYNC]))
+
+
 def point_set_frame(channel, voltage):
     ch = normalize_channel(channel)
     payload = bytes([CommandType.POINT_SET, ch]) + struct.pack("<f", float(voltage))

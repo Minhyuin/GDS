@@ -49,6 +49,11 @@ classdef Client < handle
             reply = obj.sendCommand(uint8(C.CMD_PING));
         end
 
+        function reply = sync(obj)
+            C = wgs.internal.constants();
+            reply = obj.sendCommand(uint8(C.CMD_SYNC));
+        end
+
         function reply = pointSet(obj, channel, voltage)
             reply = obj.sendCommand(obj.buildPointSetPayload(channel, voltage));
         end

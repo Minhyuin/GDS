@@ -10,6 +10,7 @@ from source.modules.protocol.codec import (  # noqa: E402
     ping_frame,
     point_set_frame,
     sequence_set_frame,
+    sync_frame,
     timer_set_frame,
 )
 
@@ -23,6 +24,10 @@ def assert_equal(actual, expected, label):
 
 def test_ping_frame():
     assert_equal(ping_frame(), bytes.fromhex("A5 01 01 00 00"), "PING frame")
+
+
+def test_sync_frame():
+    assert_equal(sync_frame(), bytes.fromhex("A5 01 01 00 01"), "SYNC frame")
 
 
 def test_point_set_ch1_1v5_frame():
@@ -47,6 +52,7 @@ def test_sequence_set_1000_points_frame_size():
 def run_all():
     tests = [
         test_ping_frame,
+        test_sync_frame,
         test_point_set_ch1_1v5_frame,
         test_timer_set_ch2_100khz_frame,
         test_sequence_set_1000_points_frame_size,

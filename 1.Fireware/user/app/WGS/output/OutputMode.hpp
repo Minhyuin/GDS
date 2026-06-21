@@ -63,6 +63,22 @@ public:
 
   APP::WGS::PROTOCOL::Result_s
   handle(OutputContext_s<Player_s> &_ctx,
+         const APP::WGS::PROTOCOL::SyncCommand_s &) {
+    if (_ctx.store == nullptr || _ctx.player == nullptr) {
+      _ctx.state = OutputState_e::FAULT;
+      return APP::WGS::PROTOCOL::Result_s::fail(
+          APP::WGS::PROTOCOL::ErrorCode_e::INVALID_STATE);
+    }
+
+    auto result = _ctx.player->sync(*_ctx.store);
+    if (result.ok()) {
+      _ctx.state = OutputState_e::BUFFERING;
+    }
+    return result;
+  }
+
+  APP::WGS::PROTOCOL::Result_s
+  handle(OutputContext_s<Player_s> &_ctx,
          const APP::WGS::PROTOCOL::PointSetCommand_s &_cmd) {
     if (_ctx.player == nullptr) {
       _ctx.state = OutputState_e::FAULT;

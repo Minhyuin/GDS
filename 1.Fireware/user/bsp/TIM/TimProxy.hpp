@@ -32,6 +32,13 @@ public:
     return HAL_TIM_Base_Stop(&timer());
   }
 
+  static void resetCounter() { __HAL_TIM_SET_COUNTER(&timer(), 0U); }
+
+  static void startCounterNow() {
+    timer().State = HAL_TIM_STATE_BUSY;
+    __HAL_TIM_ENABLE(&timer());
+  }
+
   static HAL_StatusTypeDef setUpdateFrequencyHz(float _frequencyHz) {
     if (_frequencyHz <= 0.0F) {
       return HAL_ERROR;

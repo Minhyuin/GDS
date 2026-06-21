@@ -6,6 +6,9 @@ function test_wgs_protocol()
     ping = wgs.internal.buildFrame(C.FRAME_COMMAND, uint8(C.CMD_PING));
     assertBytesEqual(ping, uint8([hex2dec("A5"), 1, 1, 0, 0]));
 
+    sync = wgs.internal.buildFrame(C.FRAME_COMMAND, uint8(C.CMD_SYNC));
+    assertBytesEqual(sync, uint8([hex2dec("A5"), 1, 1, 0, 1]));
+
     pointPayload = [
         uint8(C.CMD_POINT_SET), ...
         uint8(C.CHANNEL_1), ...

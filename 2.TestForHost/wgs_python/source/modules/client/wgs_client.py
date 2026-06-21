@@ -1,4 +1,4 @@
-from ..protocol.codec import ping_frame, point_set_frame, sequence_set_frame, timer_set_frame
+from ..protocol.codec import ping_frame, point_set_frame, sequence_set_frame, sync_frame, timer_set_frame
 from ..protocol.frame import bytes_to_hex
 from ..protocol.reply import parse_reply
 from ..transport.serial_transport import SerialTransport
@@ -28,6 +28,9 @@ class WgsClient:
 
     def ping(self):
         return self.send_command(ping_frame())
+
+    def sync(self):
+        return self.send_command(sync_frame())
 
     def point_set(self, channel, voltage):
         return self.send_command(point_set_frame(channel, voltage))

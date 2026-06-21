@@ -76,7 +76,9 @@ class MainWindow(QMainWindow):
         self.refresh_button = QPushButton("Refresh")
         self.connect_button = QPushButton("Connect")
         self.ping_button = QPushButton("Ping")
+        self.sync_button = QPushButton("Sync")
         self.ping_button.setEnabled(False)
+        self.sync_button.setEnabled(False)
 
         layout.addWidget(QLabel("Port"), 0, 0)
         layout.addWidget(self.port_combo, 0, 1)
@@ -84,11 +86,13 @@ class MainWindow(QMainWindow):
         layout.addWidget(QLabel("Baud"), 1, 0)
         layout.addWidget(self.baud_combo, 1, 1)
         layout.addWidget(self.connect_button, 1, 2)
-        layout.addWidget(self.ping_button, 2, 1, 1, 2)
+        layout.addWidget(self.ping_button, 2, 1)
+        layout.addWidget(self.sync_button, 2, 2)
 
         self.refresh_button.clicked.connect(self.refresh_ports)
         self.connect_button.clicked.connect(self.toggle_connection)
         self.ping_button.clicked.connect(self.ping)
+        self.sync_button.clicked.connect(self.sync)
         return box
 
     def _build_point_box(self):
@@ -219,6 +223,7 @@ class MainWindow(QMainWindow):
         self.connect_button.setText("Disconnect" if connected else "Connect")
         for button in [
             self.ping_button,
+            self.sync_button,
             self.point_send_button,
             self.apply_sample_rate_button,
             self.apply_wave_freq_button,
@@ -228,6 +233,9 @@ class MainWindow(QMainWindow):
 
     def ping(self):
         self._run_command("PING", lambda: self.client.ping())
+
+    def sync(self):
+        self._run_command("SYNC", lambda: self.client.sync())
 
     def send_point(self):
         channel = self.point_channel.currentData()

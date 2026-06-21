@@ -17,6 +17,7 @@ class FrameType(IntEnum):
 
 class CommandType(IntEnum):
     PING = 0x00
+    SYNC = 0x01
     POINT_SET = 0x10
     SEQUENCE_SET = 0x20
     TIMER_SET = 0x40

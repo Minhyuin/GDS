@@ -11,6 +11,7 @@ namespace APP::WGS::PROTOCOL {
 
 enum class CommandType_e : uint8_t {
   PING = 0x00,
+  SYNC = 0x01,
   POINT_SET = 0x10,
   SEQUENCE_SET = 0x20,
   TIMER_SET = 0x40,
@@ -31,6 +32,7 @@ inline constexpr size_t SEQUENCE_SET_MAX_PAYLOAD_SIZE =
     SEQUENCE_SET_HEADER_SIZE + MAX_SEQUENCE_POINTS * SEQUENCE_POINT_SIZE;
 
 struct PingCommand_s {};
+struct SyncCommand_s {};
 
 using DacSample_s = APP::WGS::OUTPUT::DacSample_s;
 
@@ -53,7 +55,7 @@ struct GetStatusCommand_s {};
 
 struct EmergencyStopCommand_s {};
 
-using Command_v = std::variant<PingCommand_s, PointSetCommand_s,
+using Command_v = std::variant<PingCommand_s, SyncCommand_s, PointSetCommand_s,
                                SequenceSetCommand_s, TimerSetCommand_s,
                                GetStatusCommand_s, EmergencyStopCommand_s>;
 

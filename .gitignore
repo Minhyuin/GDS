@@ -3,6 +3,9 @@ build/
 .cache/
 # .vscode/
 
+__pycache__/
+*.py[cod]
+
 findings.md
 progress.md
 task_plan.md

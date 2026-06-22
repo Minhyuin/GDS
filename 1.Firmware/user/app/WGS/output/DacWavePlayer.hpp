@@ -21,14 +21,31 @@ public:
   DacWavePlayer() = default;
   ~DacWavePlayer() { stop(); }
 
-  APP::WGS::PROTOCOL::Result_s start(WaveformStore &_store) {
-    if (startChannel(OutputChannel_e::CH1, _store) != HAL_OK) {
+  APP::WGS::PROTOCOL::Result_s start(WaveformStore &) {
+    return enterIdleLow();
+  }
+
+  APP::WGS::PROTOCOL::Result_s enterIdleLow() {
+    DacHardware::stopDma(DAC_CHANNEL_1);
+    DacHardware::stopDma(DAC_CHANNEL_2);
+    DMAch1Hardware::stopContinuous();
+    DMAch2Hardware::stopContinuous();
+
+    if (DacHardware::setDacValue(DAC_CHANNEL_1, 0U) != HAL_OK) {
       return fail();
     }
-    if (startChannel(OutputChannel_e::CH2, _store) != HAL_OK) {
+    if (DacHardware::setDacValue(DAC_CHANNEL_2, 0U) != HAL_OK) {
+      return fail();
+    }
+    if (DacHardware::startDac(DAC_CHANNEL_1) != HAL_OK) {
+      return fail();
+    }
+    if (DacHardware::startDac(DAC_CHANNEL_2) != HAL_OK) {
       return fail();
     }
 
+    sequencePlayingCh1_ = false;
+    sequencePlayingCh2_ = false;
     state_ = PlayerState_e::READY;
     return APP::WGS::PROTOCOL::Result_s::success();
   }
@@ -38,6 +55,8 @@ public:
     DacHardware::stopDma(DAC_CHANNEL_2);
     DMAch1Hardware::stopContinuous();
     DMAch2Hardware::stopContinuous();
+    sequencePlayingCh1_ = false;
+    sequencePlayingCh2_ = false;
     state_ = PlayerState_e::STOPPED;
   }
 
@@ -46,11 +65,13 @@ public:
     if (stopChannel(_channel) != HAL_OK) {
       return fail();
     }
+    setSequencePlaying(_channel, false);
 
     if (startChannel(_channel, _store) != HAL_OK) {
       return fail();
     }
 
+    setSequencePlaying(_channel, true);
     state_ = PlayerState_e::PLAYING;
     return APP::WGS::PROTOCOL::Result_s::success();
   }
@@ -82,6 +103,11 @@ public:
   }
 
   APP::WGS::PROTOCOL::Result_s sync(WaveformStore &_store) {
+    if (!canSync()) {
+      return APP::WGS::PROTOCOL::Result_s::fail(
+          APP::WGS::PROTOCOL::ErrorCode_e::INVALID_STATE);
+    }
+
     const auto irqState = __get_PRIMASK();
     __disable_irq();
 
@@ -118,6 +144,7 @@ public:
     if (DacHardware::stopDma(dacChannel(_channel)) != HAL_OK) {
       return fail();
     }
+    setSequencePlaying(_channel, false);
     if (DacHardware::setDacValue(dacChannel(_channel), _sample) != HAL_OK) {
       return fail();
     }
@@ -152,6 +179,7 @@ public:
   }
 
   PlayerState_e state() const { return state_; }
+  bool canSync() const { return sequencePlayingCh1_ && sequencePlayingCh2_; }
 
 private:
   static uint32_t dacChannel(OutputChannel_e _channel) {
@@ -219,6 +247,14 @@ private:
     return HAL_OK;
   }
 
+  void setSequencePlaying(OutputChannel_e _channel, bool _playing) {
+    if (_channel == OutputChannel_e::CH1) {
+      sequencePlayingCh1_ = _playing;
+    } else {
+      sequencePlayingCh2_ = _playing;
+    }
+  }
+
   APP::WGS::PROTOCOL::Result_s fail() {
     state_ = PlayerState_e::FAULT;
     return APP::WGS::PROTOCOL::Result_s::fail(
@@ -226,6 +262,8 @@ private:
   }
 
   PlayerState_e state_{PlayerState_e::STOPPED};
+  bool sequencePlayingCh1_{false};
+  bool sequencePlayingCh2_{false};
 };
 
 } // namespace APP::WGS::OUTPUT

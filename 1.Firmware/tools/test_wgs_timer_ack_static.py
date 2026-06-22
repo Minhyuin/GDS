@@ -46,6 +46,20 @@ def test_dac_player_uses_ack_pwm_for_point_and_sequence_modes():
     assert_contains(player, "stopContinuous", "channel stop should stop ACK PWM")
 
 
+def test_reset_enters_idle_low_without_ack_continuous_output():
+    player = read("user/app/WGS/output/DacWavePlayer.hpp")
+
+    assert_contains(player, "enterIdleLow()", "reset should use an explicit idle-low DAC state")
+    assert_contains(player, "setDacValue(DAC_CHANNEL_1, 0U)", "reset should drive CH1 to minimum DAC code")
+    assert_contains(player, "setDacValue(DAC_CHANNEL_2, 0U)", "reset should drive CH2 to minimum DAC code")
+    assert_contains(player, "startDac(DAC_CHANNEL_1)", "reset should enable CH1 static DAC output")
+    assert_contains(player, "startDac(DAC_CHANNEL_2)", "reset should enable CH2 static DAC output")
+    assert_contains(player, "sequencePlayingCh1_", "player should track CH1 sequence-active state")
+    assert_contains(player, "sequencePlayingCh2_", "player should track CH2 sequence-active state")
+    assert_contains(player, "canSync()", "SYNC should be gated by active sequence state")
+    assert_contains(player, "if (!canSync())", "idle SYNC should not start DMA/timer ACK output")
+
+
 def test_point_set_protocol_carries_ack_pulse_width():
     command = read("user/app/WGS/protocol/Command.hpp")
     wgs_cc = read("user/app/WGS/WGS.cc")
@@ -83,6 +97,7 @@ def run_all():
         test_wgs_uses_tim4_tim5_for_dac_output,
         test_timer_proxy_knows_ack_pwm_channels_and_width,
         test_dac_player_uses_ack_pwm_for_point_and_sequence_modes,
+        test_reset_enters_idle_low_without_ack_continuous_output,
         test_point_set_protocol_carries_ack_pulse_width,
         test_waveform_config_protocol_and_dynamic_length,
     ]

@@ -42,7 +42,7 @@ reply = client.ping();
 wgs.printReply("PING", reply);
 ```
 
-设置通道采样率：
+直接设置通道采样率：
 
 ```matlab
 reply = client.setSampleRate(1, 100000);   % CH1 / TIM4 = 100 kSamples/s
@@ -52,16 +52,16 @@ reply = client.setSampleRate(2, 100000);   % CH2 / TIM5 = 100 kSamples/s
 wgs.printReply("CH2 sample rate", reply);
 ```
 
-如果更关心波形重复频率，可以使用：
+如果更关心波形重复频率，可以使用 `sequenceSet(channel, samples, frequencyHz)`；客户端会先用样本数量配置波形长度和频率，再发送序列内容。
 
 ```matlab
-reply = client.setWaveFrequency(1, 100);   % CH1 waveform = 100 Hz
+reply = client.sequenceSet(1, ch1, 100);   % CH1 waveform = 100 Hz
 ```
 
-固件每通道目前支持固定 1000 个周期样本，因此：
+采样率由波形长度和频率自动计算：
 
 ```text
-sample_rate_hz = waveform_frequency_hz * 1000
+sample_rate_hz = length(samples) * waveform_frequency_hz
 ```
 
 输出单通道恒定电压：
@@ -78,14 +78,14 @@ t = linspace(0, 2*pi, 1000).';
 ch1 = 1.65 + 1.40 * sin(t);
 ch2 = 1.65 + 1.40 * cos(t);
 
-reply = client.sequenceSet(1, ch1);
+reply = client.sequenceSet(1, ch1, 100);
 wgs.printReply("CH1 sequence", reply);
 
-reply = client.sequenceSet(2, ch2);
+reply = client.sequenceSet(2, ch2, 100);
 wgs.printReply("CH2 sequence", reply);
 ```
 
-`sequenceSet(channel, samples)` 每帧只操作一个通道。`samples` 是以伏特为单位的一维数组，当前固件接受 1 到 1000 个样本。如果不足 1000 个点，固件会用最后一个样本填满该通道周期表剩余位置。超出 `0.0..3.3 V` 的电压由固件限幅。
+`sequenceSet(channel, samples, frequencyHz)` 每次只操作一个通道。`samples` 是以伏特为单位的一维数组，当前固件接受 1 到 1000 个样本；客户端会先配置 `length(samples)` 和 `frequencyHz`，且要求 `length(samples) * frequencyHz <= 100000 Sa/s`。如果裸序列帧长度超过固件当前波形长度，固件会截断；不足当前波形长度时，固件会用最后一个样本补齐。超出 `0.0..3.3 V` 的电压由固件限幅。
 
 通道参数可以写成：
 
@@ -161,6 +161,9 @@ POINT_SET:
 SEQUENCE_SET:
   payload = 20 channel uint16_le(sampleCount)
             sampleCount * float32_le(voltage)
+
+WAVEFORM_CONFIG:
+  payload = 30 channel uint16_le(length_sa) float32_le(frequency_hz)
 
 TIMER_SET:
   payload = 40 channel float32_le(sample_rate_hz)

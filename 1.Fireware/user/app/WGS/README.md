@@ -124,6 +124,7 @@ payload[0] = command type
 PING         = 0x00
 POINT_SET    = 0x10
 SEQUENCE_SET = 0x20
+WAVEFORM_CONFIG = 0x30
 TIMER_SET    = 0x40
 ```
 
@@ -186,7 +187,7 @@ A5 01 0A 00 10 01 00 00 C0 3F 00 00 A0 40
 
 ## SEQUENCE_SET
 
-用途：写入某个通道的一周期波形。每帧只操作一个通道。
+用途：写入某个通道的一周期波形。每帧只操作一个通道。上位机推荐先发送 `WAVEFORM_CONFIG` 设置当前通道的波形长度和频率，再发送 `SEQUENCE_SET`。
 
 ```text
 offset  size      field
@@ -204,10 +205,10 @@ payload length = 4 + N * 4
 voltage clamp range = 0.0..3.3V
 ```
 
-如果 `N < 1000`，固件用最后一个样本填满该通道周期表剩余位置：
+如果 `N` 超过当前通道的波形长度，固件会截断到当前波形长度；如果 `N` 小于当前通道的波形长度，固件用最后一个样本填满剩余位置：
 
 ```text
-periodBuffer[N..999] = periodBuffer[N - 1]
+periodBuffer[N..active_length - 1] = periodBuffer[N - 1]
 ```
 
 如果 `N = 0`、`N > 1000` 或 payload 长度不匹配，固件返回 `NACK / BAD_LENGTH`。
@@ -221,9 +222,37 @@ payload:
 33 33 53 40
 ```
 
+## WAVEFORM_CONFIG
+
+用途：设置某个通道的当前波形长度和波形重复频率。固件会计算采样率：
+
+```text
+sample_rate_hz = length_sa * frequency_hz
+```
+
+并配置对应通道的 TIM4/TIM5 触发频率。
+
+```text
+offset  size  field
+0       1     command type = 0x30
+1       1     channel
+2       2     length_sa, uint16 little-endian, unit = Sa
+4       4     frequency_hz, float32 little-endian, unit = Hz
+```
+
+约束：
+
+```text
+1 <= length_sa <= 1000
+frequency_hz > 0
+length_sa * frequency_hz <= 100000 Sa/s
+```
+
+长度非法时返回 `NACK / BAD_LENGTH`；频率或采样率越界时返回 `NACK / OUT_OF_RANGE`。
+
 ## TIMER_SET
 
-用途：修改某个通道的 DAC 采样率。CH1 对应 TIM4，CH2 对应 TIM5。
+用途：直接修改某个通道的 DAC 采样率。CH1 对应 TIM4，CH2 对应 TIM5。一般上位机应优先使用 `WAVEFORM_CONFIG`，由波形长度和频率推导采样率。
 
 ```text
 offset  size  field
@@ -232,16 +261,10 @@ offset  size  field
 2       4     sample_rate_hz, float32 little-endian
 ```
 
-`sample_rate_hz` 表示 DAC 采样频率，不是波形重复频率。因为每个周期固定 1000 点：
+限制：
 
 ```text
-waveform_frequency_hz = sample_rate_hz / 1000
-```
-
-第一版固件限制：
-
-```text
-1 Hz <= sample_rate_hz <= 200000 Hz
+1 Hz <= sample_rate_hz <= 100000 Hz
 ```
 
 频率越界时返回 `NACK / OUT_OF_RANGE`，不会钳位。
@@ -302,7 +325,6 @@ ACK, payload length = 2, status = DONE, detail = NONE
 client = wgs.connect("COM43");
 cleanupObj = onCleanup(@() client.close());
 
-client.setSampleRate(1, 100000);
-client.sequenceSet(1, ch1Samples);
-client.sequenceSet(2, ch2Samples);
+client.sequenceSet(1, ch1Samples, 100);  % config length/frequency first
+client.sequenceSet(2, ch2Samples, 100);
 ```

@@ -10,12 +10,15 @@ function C = constants()
     C.CMD_SYNC = hex2dec("01");
     C.CMD_POINT_SET = hex2dec("10");
     C.CMD_SEQUENCE_SET = hex2dec("20");
+    C.CMD_WAVEFORM_CONFIG = hex2dec("30");
     C.CMD_TIMER_SET = hex2dec("40");
 
     C.CHANNEL_1 = hex2dec("01");
     C.CHANNEL_2 = hex2dec("02");
 
     C.PERIOD_SAMPLE_COUNT = 1000;
+    C.MAX_WAVEFORM_LENGTH_SA = C.PERIOD_SAMPLE_COUNT;
+    C.MAX_SAMPLE_RATE_HZ = 100000.0;
     C.MIN_POINT_ACK_PULSE_US = 1.0;
     C.MAX_POINT_ACK_PULSE_US = 1000000.0;
     C.SEQUENCE_SET_HEADER_SIZE = 4;

@@ -268,6 +268,26 @@ PROTOCOL::Result_s WGSManager::decodeCommand(const PROTOCOL::Frame_s &_frame,
     };
     return PROTOCOL::Result_s::success();
   }
+  case PROTOCOL::CommandType_e::WAVEFORM_CONFIG: {
+    if (_frame.payload.size() != PROTOCOL::WAVEFORM_CONFIG_PAYLOAD_SIZE) {
+      return PROTOCOL::Result_s::fail(PROTOCOL::ErrorCode_e::BAD_LENGTH);
+    }
+
+    PROTOCOL::Channel_e channel{};
+    if (!readChannel(_frame.payload, 1, channel)) {
+      return PROTOCOL::Result_s::fail(PROTOCOL::ErrorCode_e::BAD_LENGTH);
+    }
+
+    const auto lengthSa = readU16(_frame.payload, 2);
+    const float frequencyHz = readFloat32Le(_frame.payload, 4);
+
+    _command = PROTOCOL::WaveformConfigCommand_s{
+        .channel = channel,
+        .lengthSa = lengthSa,
+        .frequencyHz = frequencyHz,
+    };
+    return PROTOCOL::Result_s::success();
+  }
   case PROTOCOL::CommandType_e::TIMER_SET: {
     if (_frame.payload.size() != PROTOCOL::TIMER_SET_PAYLOAD_SIZE) {
       return PROTOCOL::Result_s::fail(PROTOCOL::ErrorCode_e::BAD_LENGTH);

@@ -12,6 +12,7 @@ from source.modules.protocol.codec import (  # noqa: E402
     sequence_set_frame,
     sync_frame,
     timer_set_frame,
+    waveform_config_frame,
 )
 
 
@@ -45,6 +46,15 @@ def test_timer_set_ch2_100khz_frame():
     assert_equal(timer_set_frame("CH2", 100000.0), expected, "TIMER_SET CH2 100kHz frame")
 
 
+def test_waveform_config_ch2_256_points_12v5hz_frame():
+    expected = bytes.fromhex("A5 01 08 00 30 02 00 01") + struct.pack("<f", 12.5)
+    assert_equal(
+        waveform_config_frame("CH2", 256, 12.5),
+        expected,
+        "WAVEFORM_CONFIG CH2 256Sa 12.5Hz frame",
+    )
+
+
 def test_sequence_set_1000_points_frame_size():
     frame = sequence_set_frame("CH2", [1.65] * 1000)
     expected_length = 1 + 1 + 2 + 1 + 1 + 2 + 1000 * 4
@@ -61,6 +71,7 @@ def run_all():
         test_point_set_ch1_1v5_frame,
         test_point_set_ch2_1v5_50us_frame,
         test_timer_set_ch2_100khz_frame,
+        test_waveform_config_ch2_256_points_12v5hz_frame,
         test_sequence_set_1000_points_frame_size,
     ]
     for test in tests:

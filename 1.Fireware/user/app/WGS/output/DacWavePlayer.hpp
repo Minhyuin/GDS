@@ -4,6 +4,7 @@
 #include "Result.hpp"
 #include "WaveformStore.hpp"
 
+#include <cmath>
 #include <span>
 
 namespace APP::WGS::OUTPUT {
@@ -52,6 +53,32 @@ public:
 
     state_ = PlayerState_e::PLAYING;
     return APP::WGS::PROTOCOL::Result_s::success();
+  }
+
+  APP::WGS::PROTOCOL::Result_s configureWaveform(OutputChannel_e _channel,
+                                                 size_t _lengthSa,
+                                                 float _frequencyHz,
+                                                 WaveformStore &_store) {
+    if (!WaveformStore::isValidLength(_lengthSa)) {
+      return APP::WGS::PROTOCOL::Result_s::fail(
+          APP::WGS::PROTOCOL::ErrorCode_e::BAD_LENGTH);
+    }
+    if (!std::isfinite(_frequencyHz) || _frequencyHz <= 0.0F) {
+      return APP::WGS::PROTOCOL::Result_s::fail(
+          APP::WGS::PROTOCOL::ErrorCode_e::OUT_OF_RANGE);
+    }
+
+    const float sampleRateHz = static_cast<float>(_lengthSa) * _frequencyHz;
+    if (!std::isfinite(sampleRateHz) || sampleRateHz > MAX_SAMPLE_RATE_HZ) {
+      return APP::WGS::PROTOCOL::Result_s::fail(
+          APP::WGS::PROTOCOL::ErrorCode_e::OUT_OF_RANGE);
+    }
+
+    auto result = setSampleRate(_channel, sampleRateHz);
+    if (!result.ok()) {
+      return result;
+    }
+    return _store.setActiveLength(_channel, _lengthSa);
   }
 
   APP::WGS::PROTOCOL::Result_s sync(WaveformStore &_store) {

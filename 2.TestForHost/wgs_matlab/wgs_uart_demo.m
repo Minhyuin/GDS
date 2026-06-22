@@ -17,12 +17,6 @@ fprintf("WGS UART demo on %s @ %d baud\n", ...
 reply = client.ping();
 wgs.printReply("PING", reply);
 
-% reply = client.setWaveFrequency(1, 100);
-% wgs.printReply("CH1 sample rate", reply);
-
-reply = client.setWaveFrequency(2, 1000);
-wgs.printReply("CH2 sample rate", reply);
-
 % reply = client.pointSet(1, 1.65);
 % wgs.printReply("POINT_SET CH1 center", reply);
 
@@ -36,19 +30,20 @@ wgs.printReply("CH2 sample rate", reply);
 % reply = client.pointSet(2, 3.3);
 % wgs.printReply("POINT_SET CH2 high", reply);
 
-sampleCount = 1000;
+sampleCount = 10;
+waveformFrequencyHz = 1;
 t = (0:sampleCount-1).' * (2*pi / sampleCount);
 ch1 = 1.65 + 1.40 * sin(t);
 ch2 = ch1;
 
-% reply = client.sequenceSet(1, ch1);
+% reply = client.sequenceSet(1, ch1, waveformFrequencyHz);
 % wgs.printReply("SEQUENCE_SET CH1 1000 samples", reply);
 
-reply = client.sequenceSet(2, ch2);
+reply = client.sequenceSet(2, ch2, waveformFrequencyHz);
 wgs.printReply("SEQUENCE_SET CH2 1000 samples", reply);
 
 % shortSequence = 1.65 + 1.0 * sin(linspace(0, pi, 128));
-% reply = client.sequenceSet(1, shortSequence);
+% reply = client.sequenceSet(1, shortSequence, waveformFrequencyHz);
 % wgs.printReply("SEQUENCE_SET CH1 padded 128 samples", reply);
 
 disp("Demo finished.");

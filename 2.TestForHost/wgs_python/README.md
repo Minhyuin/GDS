@@ -1,6 +1,6 @@
 # WGS Python Host
 
-WGS Python Host 是用于调试和使用 Waveform Generation System 固件的电脑端工具。它通过串口发送 WGS 协议帧，可以完成连接测试、单点电压输出、1000 点周期波形下发、TIM4/TIM5 触发频率配置，并提供波形预览和 TX/RX 十六进制日志。
+WGS Python Host 是用于调试和使用 Waveform Generation System 固件的电脑端工具。它通过串口发送 WGS 协议帧，可以完成连接测试、单点电压输出、可配置长度/频率的周期波形下发、TIM4/TIM5 触发频率配置，并提供波形预览和 TX/RX 十六进制日志。
 
 ## 目录结构
 
@@ -88,6 +88,9 @@ POINT_SET:
 SEQUENCE_SET:
   20 channel uint16_le(sample_count) sample_count * float32_le(voltage)
 
+WAVEFORM_CONFIG:
+  30 channel uint16_le(length_sa) float32_le(frequency_hz)
+
 TIMER_SET:
   40 channel float32_le(sample_rate_hz)
 ```
@@ -123,6 +126,7 @@ python scripts/test_protocol.py
 
 - `PING` 帧
 - `POINT_SET CH1 1.5V ACK 5us` 帧
+- `WAVEFORM_CONFIG CH2 256Sa 12.5Hz` 帧
 - `TIMER_SET CH2 100kHz` 帧
 - `SEQUENCE_SET CH2 1000 points` 帧长度和头部
 
@@ -136,14 +140,15 @@ client.open()
 try:
     print(client.ping().summary())
     print(client.point_set("CH2", 1.65, ack_pulse_us=50.0).summary())
-    print(client.timer_set("CH2", 10000.0).summary())
-    print(client.sequence_set("CH2", [1.65] * 1000).summary())
+    print(client.sequence_set("CH2", [1.65] * 256, frequency_hz=12.5).summary())
 finally:
     client.close()
 ```
 
 ## 注意事项
 
-- `SEQUENCE_SET` 最大 1000 点；固件会把不足 1000 点的周期缓冲区用最后一个点补齐。
+- `sequence_set(channel, samples, frequency_hz)` 会先发送 `WAVEFORM_CONFIG` 配置波形长度和频率，再发送 `SEQUENCE_SET`。
+- 波形长度最大 1000 Sa，采样率 `length * frequency` 最高 100000 Sa/s。
+- 如果裸 `SEQUENCE_SET` 长度超过固件当前波形长度，固件会截断到当前长度；不足当前长度时会用最后一个点补齐。
 - 电压值建议控制在 0.0 到 3.3V。当前固件侧会钳位，GUI 侧也限制输入范围。
 - 若切换到高波形频率，需要同时考虑 DAC 建立时间、DMA、定时器时钟、运放/振镜驱动带宽和示波器触发设置。

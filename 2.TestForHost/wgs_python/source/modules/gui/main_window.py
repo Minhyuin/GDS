@@ -20,7 +20,13 @@ from PySide6.QtWidgets import (
 )
 
 from ..client import WgsClient
-from ..protocol.constants import MAX_POINT_ACK_PULSE_US, MIN_POINT_ACK_PULSE_US, PERIOD_SAMPLE_COUNT
+from ..protocol.constants import (
+    MAX_POINT_ACK_PULSE_US,
+    MAX_SAMPLE_RATE_HZ,
+    MAX_WAVEFORM_LENGTH_SA,
+    MIN_POINT_ACK_PULSE_US,
+    PERIOD_SAMPLE_COUNT,
+)
 from ..transport import list_serial_ports
 from ..waveform import generate_waveform
 
@@ -31,6 +37,9 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("WGS Host Debugger")
         self.resize(1180, 760)
         self.client = None
+        self._last_valid_waveform_length = PERIOD_SAMPLE_COUNT
+        self._last_valid_waveform_frequency = 10.0
+        self._updating_waveform_config = False
         self.preview_values = generate_waveform("sine")
         self._build_ui()
         self.refresh_ports()
@@ -111,30 +120,30 @@ class MainWindow(QMainWindow):
         return box
 
     def _build_timer_box(self):
-        box = QGroupBox("Timer")
+        box = QGroupBox("Waveform Config")
         layout = QFormLayout(box)
-        self.timer_channel = self._channel_combo()
-        self.sample_rate = QDoubleSpinBox()
-        self.sample_rate.setRange(1.0, 1_000_000.0)
-        self.sample_rate.setDecimals(1)
-        self.sample_rate.setSingleStep(1000.0)
-        self.sample_rate.setValue(10000.0)
-        self.wave_freq = QDoubleSpinBox()
-        self.wave_freq.setRange(0.001, 1000.0)
-        self.wave_freq.setDecimals(3)
-        self.wave_freq.setSingleStep(1.0)
-        self.wave_freq.setValue(10.0)
-        self.apply_sample_rate_button = QPushButton("Set Sample Rate")
-        self.apply_wave_freq_button = QPushButton("Set Wave Frequency")
-        self.apply_sample_rate_button.setEnabled(False)
-        self.apply_wave_freq_button.setEnabled(False)
-        layout.addRow("Channel", self.timer_channel)
-        layout.addRow("Sample Rate Hz", self.sample_rate)
-        layout.addRow("Wave Frequency Hz", self.wave_freq)
-        layout.addRow(self.apply_sample_rate_button)
-        layout.addRow(self.apply_wave_freq_button)
-        self.apply_sample_rate_button.clicked.connect(self.set_sample_rate)
-        self.apply_wave_freq_button.clicked.connect(self.set_wave_frequency)
+        self.waveform_length = QSpinBox()
+        self.waveform_length.setRange(1, MAX_WAVEFORM_LENGTH_SA)
+        self.waveform_length.setValue(PERIOD_SAMPLE_COUNT)
+        self.waveform_length.setSuffix(" Sa")
+        self.waveform_frequency = QDoubleSpinBox()
+        self.waveform_frequency.setRange(0.001, MAX_SAMPLE_RATE_HZ)
+        self.waveform_frequency.setDecimals(3)
+        self.waveform_frequency.setSingleStep(1.0)
+        self.waveform_frequency.setValue(10.0)
+        self.waveform_frequency.setSuffix(" Hz")
+        self.computed_sample_rate = QDoubleSpinBox()
+        self.computed_sample_rate.setRange(0.0, MAX_SAMPLE_RATE_HZ)
+        self.computed_sample_rate.setDecimals(1)
+        self.computed_sample_rate.setSuffix(" Sa/s")
+        self.computed_sample_rate.setReadOnly(True)
+        self.computed_sample_rate.setButtonSymbols(QDoubleSpinBox.NoButtons)
+        layout.addRow("Length", self.waveform_length)
+        layout.addRow("Frequency", self.waveform_frequency)
+        layout.addRow("Sample Rate", self.computed_sample_rate)
+        self.waveform_length.valueChanged.connect(self._on_waveform_config_changed)
+        self.waveform_frequency.valueChanged.connect(self._on_waveform_config_changed)
+        self._update_sample_rate_display()
         return box
 
     def _build_sequence_box(self):
@@ -143,9 +152,6 @@ class MainWindow(QMainWindow):
         self.sequence_channel = self._channel_combo()
         self.waveform_kind = QComboBox()
         self.waveform_kind.addItems(["sine", "cosine", "square", "triangle", "constant"])
-        self.points = QSpinBox()
-        self.points.setRange(1, PERIOD_SAMPLE_COUNT)
-        self.points.setValue(PERIOD_SAMPLE_COUNT)
         self.center = self._voltage_spin(1.65)
         self.amplitude = self._voltage_spin(1.2)
         self.phase = QDoubleSpinBox()
@@ -158,7 +164,6 @@ class MainWindow(QMainWindow):
 
         layout.addRow("Channel", self.sequence_channel)
         layout.addRow("Waveform", self.waveform_kind)
-        layout.addRow("Points", self.points)
         layout.addRow("Center V", self.center)
         layout.addRow("Amplitude V", self.amplitude)
         layout.addRow("Phase deg", self.phase)
@@ -169,7 +174,7 @@ class MainWindow(QMainWindow):
 
         self.preview_button.clicked.connect(self.update_preview)
         self.sequence_send_button.clicked.connect(self.send_sequence)
-        for widget in [self.waveform_kind, self.points, self.center, self.amplitude, self.phase]:
+        for widget in [self.waveform_kind, self.center, self.amplitude, self.phase]:
             signal = getattr(widget, "valueChanged", None) or getattr(widget, "currentTextChanged")
             signal.connect(self.update_preview)
         return box
@@ -236,8 +241,6 @@ class MainWindow(QMainWindow):
             self.ping_button,
             self.sync_button,
             self.point_send_button,
-            self.apply_sample_rate_button,
-            self.apply_wave_freq_button,
             self.sequence_send_button,
         ]:
             button.setEnabled(connected)
@@ -257,38 +260,49 @@ class MainWindow(QMainWindow):
             lambda: self.client.point_set(channel, voltage, ack_pulse_us),
         )
 
-    def set_sample_rate(self):
-        channel = self.timer_channel.currentData()
-        rate = self.sample_rate.value()
-        self._run_command(f"TIMER_SET {channel} {rate:.1f}Hz", lambda: self.client.timer_set(channel, rate))
-
-    def set_wave_frequency(self):
-        channel = self.timer_channel.currentData()
-        rate = self.wave_freq.value() * PERIOD_SAMPLE_COUNT
-        self.sample_rate.setValue(rate)
-        self._run_command(
-            f"TIMER_SET {channel} wave={self.wave_freq.value():.3f}Hz sample={rate:.1f}Hz",
-            lambda: self.client.timer_set(channel, rate),
-        )
-
     def send_sequence(self):
         channel = self.sequence_channel.currentData()
         self.update_preview()
+        frequency_hz = self.waveform_frequency.value()
         self._run_command(
-            f"SEQUENCE_SET {channel} {len(self.preview_values)} points",
-            lambda: self.client.sequence_set(channel, self.preview_values),
+            f"SEQUENCE_SET {channel} {len(self.preview_values)} points {frequency_hz:.3f}Hz",
+            lambda: self.client.sequence_set(channel, self.preview_values, frequency_hz),
         )
 
     def update_preview(self):
         self.preview_values = generate_waveform(
             self.waveform_kind.currentText(),
-            self.points.value(),
+            self.waveform_length.value(),
             self.center.value(),
             self.amplitude.value(),
             self.phase.value(),
         )
         self.curve.setData(self.preview_values)
         self.plot.setYRange(0.0, 3.3, padding=0.04)
+
+    def _on_waveform_config_changed(self):
+        if self._updating_waveform_config:
+            return
+
+        length = self.waveform_length.value()
+        frequency = self.waveform_frequency.value()
+        if length * frequency > MAX_SAMPLE_RATE_HZ:
+            self._updating_waveform_config = True
+            self.waveform_length.setValue(self._last_valid_waveform_length)
+            self.waveform_frequency.setValue(self._last_valid_waveform_frequency)
+            self._updating_waveform_config = False
+            self._update_sample_rate_display()
+            self.update_preview()
+            self.append_log(f"Waveform config rejected: sample rate exceeds {MAX_SAMPLE_RATE_HZ:g} Sa/s")
+            return
+
+        self._last_valid_waveform_length = length
+        self._last_valid_waveform_frequency = frequency
+        self._update_sample_rate_display()
+        self.update_preview()
+
+    def _update_sample_rate_display(self):
+        self.computed_sample_rate.setValue(self.waveform_length.value() * self.waveform_frequency.value())
 
     def _run_command(self, label, fn):
         if not self.client or not self.client.is_open:

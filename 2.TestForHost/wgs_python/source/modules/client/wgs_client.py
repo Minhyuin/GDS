@@ -1,4 +1,11 @@
-from ..protocol.codec import ping_frame, point_set_frame, sequence_set_frame, sync_frame, timer_set_frame
+from ..protocol.codec import (
+    ping_frame,
+    point_set_frame,
+    sequence_set_frame,
+    sync_frame,
+    timer_set_frame,
+    waveform_config_frame,
+)
 from ..protocol.frame import bytes_to_hex
 from ..protocol.reply import parse_reply
 from ..transport.serial_transport import SerialTransport
@@ -38,8 +45,15 @@ class WgsClient:
     def point_set_no_reply(self, channel, voltage, ack_pulse_us=5.0):
         self.send_command_no_reply(point_set_frame(channel, voltage, ack_pulse_us))
 
-    def sequence_set(self, channel, samples):
-        return self.send_command(sequence_set_frame(channel, samples))
+    def waveform_config(self, channel, length_sa, frequency_hz):
+        return self.send_command(waveform_config_frame(channel, length_sa, frequency_hz))
+
+    def sequence_set(self, channel, samples, frequency_hz):
+        values = list(samples)
+        config_reply = self.waveform_config(channel, len(values), frequency_hz)
+        if not config_reply.ok:
+            return config_reply
+        return self.send_command(sequence_set_frame(channel, values))
 
     def timer_set(self, channel, sample_rate_hz):
         return self.send_command(timer_set_frame(channel, sample_rate_hz))

@@ -1,5 +1,12 @@
 # GDS Development Guidelines
 
+GDS is a waveform generator, where the lower-level machine uses STM32 and outputs waveforms through DAC. The upper-level machine has designed both Matlab and Python methods for use and debugging. For details, please refer to following.
+```
+./1.Firmware/user/app/WGS/README.md,
+./2.TestForHost/wgs_matlab/README.md,
+./2.TestForHost/wgs_python/README.md
+```
+
 ## Platform And Toolchain
 
 - C++23 / C11

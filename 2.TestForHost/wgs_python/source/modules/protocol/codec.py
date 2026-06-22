@@ -5,6 +5,8 @@ from .constants import (
     CommandType,
     FrameType,
     MAX_POINT_ACK_PULSE_US,
+    MAX_SAMPLE_RATE_HZ,
+    MAX_WAVEFORM_LENGTH_SA,
     MIN_POINT_ACK_PULSE_US,
     PERIOD_SAMPLE_COUNT,
     normalize_channel,
@@ -38,6 +40,22 @@ def sequence_set_frame(channel, samples):
         raise ValueError(f"SEQUENCE_SET requires 1..{PERIOD_SAMPLE_COUNT} samples")
     payload = bytes([CommandType.SEQUENCE_SET, ch]) + struct.pack("<H", len(values))
     payload += b"".join(struct.pack("<f", value) for value in values)
+    return build_frame(FrameType.COMMAND, payload)
+
+
+def waveform_config_frame(channel, length_sa, frequency_hz):
+    ch = normalize_channel(channel)
+    length_sa = int(length_sa)
+    frequency_hz = float(frequency_hz)
+    if not 1 <= length_sa <= MAX_WAVEFORM_LENGTH_SA:
+        raise ValueError(f"WAVEFORM_CONFIG length must be 1..{MAX_WAVEFORM_LENGTH_SA} Sa")
+    if not math.isfinite(frequency_hz) or frequency_hz <= 0.0:
+        raise ValueError("WAVEFORM_CONFIG frequency must be a positive finite value")
+    sample_rate_hz = length_sa * frequency_hz
+    if sample_rate_hz > MAX_SAMPLE_RATE_HZ:
+        raise ValueError(f"WAVEFORM_CONFIG sample rate must be <= {MAX_SAMPLE_RATE_HZ:g} Sa/s")
+    payload = bytes([CommandType.WAVEFORM_CONFIG, ch]) + struct.pack("<H", length_sa)
+    payload += struct.pack("<f", frequency_hz)
     return build_frame(FrameType.COMMAND, payload)
 
 

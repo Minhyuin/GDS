@@ -1,4 +1,11 @@
-from .codec import ping_frame, point_set_frame, sequence_set_frame, sync_frame, timer_set_frame
+from .codec import (
+    ping_frame,
+    point_set_frame,
+    sequence_set_frame,
+    sync_frame,
+    timer_set_frame,
+    waveform_config_frame,
+)
 from .constants import AckStatus, Channel, CommandType, ErrorCode, FrameType
 from .frame import build_frame, bytes_to_hex
 from .reply import Reply, parse_reply
@@ -18,4 +25,5 @@ __all__ = [
     "sequence_set_frame",
     "sync_frame",
     "timer_set_frame",
+    "waveform_config_frame",
 ]

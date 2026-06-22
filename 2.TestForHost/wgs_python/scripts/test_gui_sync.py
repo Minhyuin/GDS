@@ -18,6 +18,7 @@ class FakeClient:
         self.is_open = True
         self.sync_calls = 0
         self.point_calls = []
+        self.sequence_calls = []
         self.last_tx = bytes.fromhex("A5 01 01 00 01")
         self.last_rx = bytes.fromhex("A5 02 02 00 01 00")
 
@@ -28,6 +29,11 @@ class FakeClient:
     def point_set(self, channel, voltage, ack_pulse_us=5.0):
         self.point_calls.append((channel, voltage, ack_pulse_us))
         self.last_tx = bytes.fromhex("A5 01 0A 00 10 01 00 00 C0 3F 00 00 48 42")
+        return FakeReply()
+
+    def sequence_set(self, channel, samples, frequency_hz):
+        self.sequence_calls.append((channel, len(samples), frequency_hz))
+        self.last_tx = bytes.fromhex("A5 01 08 00 30 01 03 00 00 00 20 41")
         return FakeReply()
 
     def close(self):
@@ -102,10 +108,58 @@ def test_point_ack_width_is_sent_to_client():
     window.close()
 
 
+def test_waveform_length_frequency_updates_readonly_sample_rate_and_rejects_over_limit():
+    app_instance()
+    window = main_window.MainWindow()
+
+    if not hasattr(window, "waveform_length"):
+        raise AssertionError("MainWindow should expose waveform_length")
+    if not hasattr(window, "waveform_frequency"):
+        raise AssertionError("MainWindow should expose waveform_frequency")
+    if not hasattr(window, "computed_sample_rate"):
+        raise AssertionError("MainWindow should expose computed_sample_rate")
+    if not window.computed_sample_rate.isReadOnly():
+        raise AssertionError("computed_sample_rate should be read-only")
+
+    window.waveform_length.setValue(256)
+    window.waveform_frequency.setValue(12.5)
+    if window.computed_sample_rate.value() != 3200.0:
+        raise AssertionError(f"Expected 3200 Sa/s, got {window.computed_sample_rate.value()}")
+
+    window.waveform_frequency.setValue(500.0)
+    if window.waveform_frequency.value() != 12.5:
+        raise AssertionError("Over-limit frequency should be rejected and restored")
+    if window.computed_sample_rate.value() != 3200.0:
+        raise AssertionError("Sample rate should remain at the previous accepted value")
+
+    window.close()
+
+
+def test_send_sequence_uses_configured_length_and_frequency():
+    app_instance()
+    window = main_window.MainWindow()
+    window.client = FakeClient()
+    window._set_connected(True)
+    window.waveform_length.setValue(128)
+    window.waveform_frequency.setValue(20.0)
+
+    window.send_sequence()
+    if window.client.sequence_calls != [("CH1", 128, 20.0)]:
+        raise AssertionError(f"Expected configured sequence call, got {window.client.sequence_calls!r}")
+
+    log_text = window.log.toPlainText()
+    if "SEQUENCE_SET CH1 128 points 20.000Hz" not in log_text:
+        raise AssertionError("Sequence log should include configured length and frequency")
+
+    window.close()
+
+
 def run_all():
     tests = [
         test_sync_button_is_available_when_connected_and_calls_client_sync,
         test_point_ack_width_is_sent_to_client,
+        test_waveform_length_frequency_updates_readonly_sample_rate_and_rejects_over_limit,
+        test_send_sequence_uses_configured_length_and_frequency,
     ]
     for test in tests:
         test()

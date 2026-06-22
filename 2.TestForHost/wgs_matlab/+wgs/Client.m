@@ -68,7 +68,7 @@ classdef Client < handle
             obj.sendCommandNoReply(obj.buildPointSetPayload(channel, voltage, ackPulseUs));
         end
 
-        function reply = sequenceSet(obj, channel, samples)
+        function reply = sequenceSet(obj, channel, samples, frequencyHz)
             C = wgs.internal.constants();
 
             samples = reshape(samples, 1, []);
@@ -79,18 +79,21 @@ classdef Client < handle
                       C.MAX_SEQUENCE_POINTS);
             end
 
-            payload = zeros(1, C.SEQUENCE_SET_HEADER_SIZE + sampleCount * 4, ...
-                            "uint8");
-            payload(1) = uint8(C.CMD_SEQUENCE_SET);
-            payload(2) = wgs.internal.channelByte(channel);
-            payload(3:4) = wgs.internal.uint16le(sampleCount);
-
-            offset = C.SEQUENCE_SET_HEADER_SIZE + 1;
-            for i = 1:sampleCount
-                payload(offset:offset+3) = wgs.internal.float32le(samples(i));
-                offset = offset + 4;
+            if nargin < 4
+                error("WGS:MissingFrequency", ...
+                      "sequenceSet requires frequencyHz so the client can configure waveform length first.");
             end
 
+            reply = obj.waveformConfig(channel, sampleCount, frequencyHz);
+            if ~reply.isAck
+                return;
+            end
+
+            reply = obj.sendSequencePayload(channel, samples);
+        end
+
+        function reply = waveformConfig(obj, channel, lengthSa, frequencyHz)
+            payload = obj.buildWaveformConfigPayload(channel, lengthSa, frequencyHz);
             reply = obj.sendCommand(payload);
         end
 
@@ -113,6 +116,24 @@ classdef Client < handle
     end
 
     methods (Access = private)
+        function reply = sendSequencePayload(obj, channel, samples)
+            C = wgs.internal.constants();
+            sampleCount = numel(samples);
+            payload = zeros(1, C.SEQUENCE_SET_HEADER_SIZE + sampleCount * 4, ...
+                            "uint8");
+            payload(1) = uint8(C.CMD_SEQUENCE_SET);
+            payload(2) = wgs.internal.channelByte(channel);
+            payload(3:4) = wgs.internal.uint16le(sampleCount);
+
+            offset = C.SEQUENCE_SET_HEADER_SIZE + 1;
+            for i = 1:sampleCount
+                payload(offset:offset+3) = wgs.internal.float32le(samples(i));
+                offset = offset + 4;
+            end
+
+            reply = obj.sendCommand(payload);
+        end
+
         function open(obj)
             obj.Device = serialport(obj.Port, obj.BaudRate, ...
                 "Timeout", obj.Timeout, ...
@@ -193,6 +214,34 @@ classdef Client < handle
                 wgs.internal.channelByte(channel), ...
                 wgs.internal.float32le(voltage), ...
                 wgs.internal.float32le(ackPulseUs)
+            ];
+        end
+
+        function payload = buildWaveformConfigPayload(~, channel, lengthSa, frequencyHz)
+            C = wgs.internal.constants();
+            lengthSa = double(lengthSa);
+            frequencyHz = double(frequencyHz);
+            if lengthSa ~= round(lengthSa) || ...
+                    lengthSa < 1 || lengthSa > C.MAX_WAVEFORM_LENGTH_SA
+                error("WGS:BadWaveformLength", ...
+                      "Waveform length must be an integer in 1..%d Sa.", ...
+                      C.MAX_WAVEFORM_LENGTH_SA);
+            end
+            if ~isfinite(frequencyHz) || frequencyHz <= 0
+                error("WGS:BadWaveformFrequency", ...
+                      "Waveform frequency must be a positive finite value.");
+            end
+            sampleRateHz = lengthSa * frequencyHz;
+            if sampleRateHz > C.MAX_SAMPLE_RATE_HZ
+                error("WGS:BadSampleRate", ...
+                      "Waveform sample rate %.3f Sa/s exceeds %.3f Sa/s.", ...
+                      sampleRateHz, C.MAX_SAMPLE_RATE_HZ);
+            end
+            payload = [
+                uint8(C.CMD_WAVEFORM_CONFIG), ...
+                wgs.internal.channelByte(channel), ...
+                wgs.internal.uint16le(uint16(lengthSa)), ...
+                wgs.internal.float32le(frequencyHz)
             ];
         end
 

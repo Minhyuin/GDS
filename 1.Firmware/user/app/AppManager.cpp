@@ -7,6 +7,11 @@
 void AppManager::initApp() { createApp(); }
 
 void AppManager::createApp() {
+  auto &buzzer = buzzer_.construct();
+  if (!buzzer.init()) {
+    LOG::Logger::instance().warn(LOCATION, "App", "buzzer task init failed");
+  }
+
   auto &wgs = wgs_.construct();
   auto transportResult = wgs.init();
   if (!transportResult.ok()) {

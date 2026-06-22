@@ -2,6 +2,7 @@
 
 #include "Lazy.hpp"
 #include "Singleton.hpp"
+#include "Buzzer.hpp"
 #include "WGS.hpp"
 
 class AppManager : public Singleton<AppManager> {
@@ -14,5 +15,6 @@ private:
 
   void createApp();
 
+  Lazy<APP::BUZZER::BuzzerTask> buzzer_;
   Lazy<APP::WGS::WGSManager> wgs_;
 };

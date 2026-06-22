@@ -1,5 +1,6 @@
 #include "WGS.hpp"
 
+#include "Buzzer.hpp"
 #include "usart.h"
 
 #include <cmath>
@@ -112,11 +113,9 @@ void WGSManager::notifyRxFromIsr() {
 
 void WGSManager::onTxCompleteFromIsr() { transport_.onTxComplete(); }
 
-void WGSManager::onDacDmaHalfCompleteFromIsr() {
-}
+void WGSManager::onDacDmaHalfCompleteFromIsr() {}
 
-void WGSManager::onDacDmaCompleteFromIsr() {
-}
+void WGSManager::onDacDmaCompleteFromIsr() {}
 
 PROTOCOL::Result_s WGSManager::startTask() {
   taskHandle_ =
@@ -175,6 +174,8 @@ void WGSManager::handleFrame(const PROTOCOL::Frame_s &_frame) {
     protocol_.sendNack(decodeResult.code);
     return;
   }
+
+  APP::BUZZER::notifyProtocolCommandReceived();
 
   if (std::holds_alternative<PROTOCOL::PingCommand_s>(command)) {
     sendResult(PROTOCOL::Result_s::success());

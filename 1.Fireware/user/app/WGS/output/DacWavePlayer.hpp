@@ -15,7 +15,7 @@ public:
   static constexpr size_t PERIOD_SAMPLE_COUNT =
       WaveformStore::PERIOD_SAMPLE_COUNT;
   static constexpr float MIN_SAMPLE_RATE_HZ = 1.0F;
-  static constexpr float MAX_SAMPLE_RATE_HZ = 1000000.0F;
+  static constexpr float MAX_SAMPLE_RATE_HZ = 100000.0F; // 100k Sa/s
 
   DacWavePlayer() = default;
   ~DacWavePlayer() { stop(); }
@@ -35,8 +35,8 @@ public:
   void stop() {
     DacHardware::stopDma(DAC_CHANNEL_1);
     DacHardware::stopDma(DAC_CHANNEL_2);
-    DMAch1Hardware::stop();
-    DMAch2Hardware::stop();
+    DMAch1Hardware::stopContinuous();
+    DMAch2Hardware::stopContinuous();
     state_ = PlayerState_e::STOPPED;
   }
 
@@ -86,7 +86,8 @@ public:
   }
 
   APP::WGS::PROTOCOL::Result_s holdChannel(OutputChannel_e _channel,
-                                           uint16_t _sample) {
+                                           uint16_t _sample,
+                                           float _ackPulseUs) {
     if (DacHardware::stopDma(dacChannel(_channel)) != HAL_OK) {
       return fail();
     }
@@ -96,7 +97,7 @@ public:
     if (DacHardware::startDac(dacChannel(_channel)) != HAL_OK) {
       return fail();
     }
-    if (startTimer(_channel) != HAL_OK) {
+    if (pulseTimer(_channel, _ackPulseUs) != HAL_OK) {
       return fail();
     }
 
@@ -131,13 +132,20 @@ private:
   }
 
   static HAL_StatusTypeDef startTimer(OutputChannel_e _channel) {
-    return _channel == OutputChannel_e::CH1 ? DMAch1Hardware::start()
-                                            : DMAch2Hardware::start();
+    return _channel == OutputChannel_e::CH1 ? DMAch1Hardware::startContinuous()
+                                            : DMAch2Hardware::startContinuous();
   }
 
   static HAL_StatusTypeDef stopTimer(OutputChannel_e _channel) {
-    return _channel == OutputChannel_e::CH1 ? DMAch1Hardware::stop()
-                                            : DMAch2Hardware::stop();
+    return _channel == OutputChannel_e::CH1 ? DMAch1Hardware::stopContinuous()
+                                            : DMAch2Hardware::stopContinuous();
+  }
+
+  static HAL_StatusTypeDef pulseTimer(OutputChannel_e _channel,
+                                      float _ackPulseUs) {
+    return _channel == OutputChannel_e::CH1
+               ? DMAch1Hardware::pulseOnce(_ackPulseUs)
+               : DMAch2Hardware::pulseOnce(_ackPulseUs);
   }
 
   HAL_StatusTypeDef startChannel(OutputChannel_e _channel,

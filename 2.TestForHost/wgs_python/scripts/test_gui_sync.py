@@ -17,11 +17,17 @@ class FakeClient:
     def __init__(self):
         self.is_open = True
         self.sync_calls = 0
+        self.point_calls = []
         self.last_tx = bytes.fromhex("A5 01 01 00 01")
         self.last_rx = bytes.fromhex("A5 02 02 00 01 00")
 
     def sync(self):
         self.sync_calls += 1
+        return FakeReply()
+
+    def point_set(self, channel, voltage, ack_pulse_us=5.0):
+        self.point_calls.append((channel, voltage, ack_pulse_us))
+        self.last_tx = bytes.fromhex("A5 01 0A 00 10 01 00 00 C0 3F 00 00 48 42")
         return FakeReply()
 
     def close(self):
@@ -72,8 +78,35 @@ def test_sync_button_is_available_when_connected_and_calls_client_sync():
     window.close()
 
 
+def test_point_ack_width_is_sent_to_client():
+    app_instance()
+    window = main_window.MainWindow()
+    window.client = FakeClient()
+    window._set_connected(True)
+
+    if not hasattr(window, "point_ack_pulse"):
+        raise AssertionError("MainWindow should expose a point_ack_pulse control")
+
+    window.point_channel.setCurrentIndex(0)
+    window.point_voltage.setValue(1.5)
+    window.point_ack_pulse.setValue(50.0)
+    window.send_point()
+
+    if window.client.point_calls != [("CH1", 1.5, 50.0)]:
+        raise AssertionError(f"Expected POINT_SET ACK width call, got {window.client.point_calls!r}")
+
+    log_text = window.log.toPlainText()
+    if "POINT_SET CH1 1.5000V ACK=50.0us" not in log_text:
+        raise AssertionError("POINT_SET ACK width should be written to the GUI log")
+
+    window.close()
+
+
 def run_all():
-    tests = [test_sync_button_is_available_when_connected_and_calls_client_sync]
+    tests = [
+        test_sync_button_is_available_when_connected_and_calls_client_sync,
+        test_point_ack_width_is_sent_to_client,
+    ]
     for test in tests:
         test()
         print(f"PASS {test.__name__}")

@@ -1,6 +1,14 @@
+import math
 import struct
 
-from .constants import CommandType, FrameType, PERIOD_SAMPLE_COUNT, normalize_channel
+from .constants import (
+    CommandType,
+    FrameType,
+    MAX_POINT_ACK_PULSE_US,
+    MIN_POINT_ACK_PULSE_US,
+    PERIOD_SAMPLE_COUNT,
+    normalize_channel,
+)
 from .frame import build_frame
 
 
@@ -12,9 +20,14 @@ def sync_frame():
     return build_frame(FrameType.COMMAND, bytes([CommandType.SYNC]))
 
 
-def point_set_frame(channel, voltage):
+def point_set_frame(channel, voltage, ack_pulse_us=5.0):
     ch = normalize_channel(channel)
-    payload = bytes([CommandType.POINT_SET, ch]) + struct.pack("<f", float(voltage))
+    ack_pulse_us = float(ack_pulse_us)
+    if not math.isfinite(ack_pulse_us) or not MIN_POINT_ACK_PULSE_US <= ack_pulse_us <= MAX_POINT_ACK_PULSE_US:
+        raise ValueError(
+            f"POINT_SET ACK pulse width must be {MIN_POINT_ACK_PULSE_US:g}..{MAX_POINT_ACK_PULSE_US:g} us"
+        )
+    payload = bytes([CommandType.POINT_SET, ch]) + struct.pack("<f", float(voltage)) + struct.pack("<f", ack_pulse_us)
     return build_frame(FrameType.COMMAND, payload)
 
 

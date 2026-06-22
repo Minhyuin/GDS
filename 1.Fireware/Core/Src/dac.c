@@ -52,7 +52,7 @@ void MX_DAC_Init(void)
 
   /** DAC channel OUT1 config
   */
-  sConfig.DAC_Trigger = DAC_TRIGGER_T6_TRGO;
+  sConfig.DAC_Trigger = DAC_TRIGGER_T4_TRGO;
   sConfig.DAC_OutputBuffer = DAC_OUTPUTBUFFER_DISABLE;
   if (HAL_DAC_ConfigChannel(&hdac, &sConfig, DAC_CHANNEL_1) != HAL_OK)
   {
@@ -61,7 +61,7 @@ void MX_DAC_Init(void)
 
   /** DAC channel OUT2 config
   */
-  sConfig.DAC_Trigger = DAC_TRIGGER_T7_TRGO;
+  sConfig.DAC_Trigger = DAC_TRIGGER_T5_TRGO;
   if (HAL_DAC_ConfigChannel(&hdac, &sConfig, DAC_CHANNEL_2) != HAL_OK)
   {
     Error_Handler();

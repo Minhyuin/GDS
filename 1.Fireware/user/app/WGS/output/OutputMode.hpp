@@ -87,7 +87,8 @@ public:
     }
 
     const auto channel = toOutputChannel(_cmd.channel);
-    auto result = _ctx.player->holdChannel(channel, _cmd.sample.value);
+    auto result =
+        _ctx.player->holdChannel(channel, _cmd.sample.value, _cmd.ackPulseUs);
     if (result.ok()) {
       _ctx.state = OutputState_e::BUFFERING;
     }

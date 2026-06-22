@@ -54,12 +54,18 @@ classdef Client < handle
             reply = obj.sendCommand(uint8(C.CMD_SYNC));
         end
 
-        function reply = pointSet(obj, channel, voltage)
-            reply = obj.sendCommand(obj.buildPointSetPayload(channel, voltage));
+        function reply = pointSet(obj, channel, voltage, ackPulseUs)
+            if nargin < 4
+                ackPulseUs = 5.0;
+            end
+            reply = obj.sendCommand(obj.buildPointSetPayload(channel, voltage, ackPulseUs));
         end
 
-        function pointSetNoReply(obj, channel, voltage)
-            obj.sendCommandNoReply(obj.buildPointSetPayload(channel, voltage));
+        function pointSetNoReply(obj, channel, voltage, ackPulseUs)
+            if nargin < 4
+                ackPulseUs = 5.0;
+            end
+            obj.sendCommandNoReply(obj.buildPointSetPayload(channel, voltage, ackPulseUs));
         end
 
         function reply = sequenceSet(obj, channel, samples)
@@ -173,12 +179,20 @@ classdef Client < handle
             write(obj.Device, frame, "uint8");
         end
 
-        function payload = buildPointSetPayload(~, channel, voltage)
+        function payload = buildPointSetPayload(~, channel, voltage, ackPulseUs)
             C = wgs.internal.constants();
+            if ~isfinite(ackPulseUs) || ...
+                    ackPulseUs < C.MIN_POINT_ACK_PULSE_US || ...
+                    ackPulseUs > C.MAX_POINT_ACK_PULSE_US
+                error("WGS:BadAckPulseWidth", ...
+                      "POINT_SET ACK pulse width must be %.0f..%.0f us.", ...
+                      C.MIN_POINT_ACK_PULSE_US, C.MAX_POINT_ACK_PULSE_US);
+            end
             payload = [
                 uint8(C.CMD_POINT_SET), ...
                 wgs.internal.channelByte(channel), ...
-                wgs.internal.float32le(voltage)
+                wgs.internal.float32le(voltage), ...
+                wgs.internal.float32le(ackPulseUs)
             ];
         end
 

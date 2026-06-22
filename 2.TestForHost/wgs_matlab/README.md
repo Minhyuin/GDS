@@ -45,10 +45,10 @@ wgs.printReply("PING", reply);
 设置通道采样率：
 
 ```matlab
-reply = client.setSampleRate(1, 100000);   % CH1 / TIM6 = 100 kSamples/s
+reply = client.setSampleRate(1, 100000);   % CH1 / TIM4 = 100 kSamples/s
 wgs.printReply("CH1 sample rate", reply);
 
-reply = client.setSampleRate(2, 100000);   % CH2 / TIM7 = 100 kSamples/s
+reply = client.setSampleRate(2, 100000);   % CH2 / TIM5 = 100 kSamples/s
 wgs.printReply("CH2 sample rate", reply);
 ```
 
@@ -68,7 +68,7 @@ sample_rate_hz = waveform_frequency_hz * 1000
 
 ```matlab
 reply = client.pointSet(1, 1.65);          % CH1 保持 1.65 V
-reply = client.pointSet(2, 1.65);          % CH2 保持 1.65 V
+reply = client.pointSet(2, 1.65, 50.0);    % CH2 保持 1.65 V，ACK 脉宽 50 us
 ```
 
 输出单通道周期波形：
@@ -156,7 +156,7 @@ PING:
   payload = 00
 
 POINT_SET:
-  payload = 10 channel float32_le(voltage)
+  payload = 10 channel float32_le(voltage) float32_le(ack_pulse_us)
 
 SEQUENCE_SET:
   payload = 20 channel uint16_le(sampleCount)
@@ -169,8 +169,8 @@ TIMER_SET:
 通道：
 
 ```text
-0x01 CH1 / DAC_OUT1 / TIM6
-0x02 CH2 / DAC_OUT2 / TIM7
+0x01 CH1 / DAC_OUT1 / TIM4
+0x02 CH2 / DAC_OUT2 / TIM5
 ```
 
 当前固件的成功回复格式类似于：

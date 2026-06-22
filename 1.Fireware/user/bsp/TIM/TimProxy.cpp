@@ -6,8 +6,8 @@ extern "C" {
 
 namespace BSP {
 
-TIM_HandleTypeDef &Tim6HandleProvider::handle() { return htim6; }
+TIM_HandleTypeDef &Tim4HandleProvider::handle() { return htim4; }
 
-TIM_HandleTypeDef &Tim7HandleProvider::handle() { return htim7; }
+TIM_HandleTypeDef &Tim5HandleProvider::handle() { return htim5; }
 
 } // namespace BSP

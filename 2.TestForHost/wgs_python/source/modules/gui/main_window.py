@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..client import WgsClient
-from ..protocol.constants import PERIOD_SAMPLE_COUNT
+from ..protocol.constants import MAX_POINT_ACK_PULSE_US, MIN_POINT_ACK_PULSE_US, PERIOD_SAMPLE_COUNT
 from ..transport import list_serial_ports
 from ..waveform import generate_waveform
 
@@ -100,10 +100,12 @@ class MainWindow(QMainWindow):
         layout = QFormLayout(box)
         self.point_channel = self._channel_combo()
         self.point_voltage = self._voltage_spin(1.65)
+        self.point_ack_pulse = self._ack_pulse_spin()
         self.point_send_button = QPushButton("Send Point")
         self.point_send_button.setEnabled(False)
         layout.addRow("Channel", self.point_channel)
         layout.addRow("Voltage", self.point_voltage)
+        layout.addRow("ACK Width", self.point_ack_pulse)
         layout.addRow(self.point_send_button)
         self.point_send_button.clicked.connect(self.send_point)
         return box
@@ -187,6 +189,15 @@ class MainWindow(QMainWindow):
         spin.setSuffix(" V")
         return spin
 
+    def _ack_pulse_spin(self):
+        spin = QDoubleSpinBox()
+        spin.setRange(MIN_POINT_ACK_PULSE_US, MAX_POINT_ACK_PULSE_US)
+        spin.setDecimals(1)
+        spin.setSingleStep(1.0)
+        spin.setValue(5.0)
+        spin.setSuffix(" us")
+        return spin
+
     def refresh_ports(self):
         current = self.port_combo.currentText()
         self.port_combo.clear()
@@ -240,7 +251,11 @@ class MainWindow(QMainWindow):
     def send_point(self):
         channel = self.point_channel.currentData()
         voltage = self.point_voltage.value()
-        self._run_command(f"POINT_SET {channel} {voltage:.4f}V", lambda: self.client.point_set(channel, voltage))
+        ack_pulse_us = self.point_ack_pulse.value()
+        self._run_command(
+            f"POINT_SET {channel} {voltage:.4f}V ACK={ack_pulse_us:.1f}us",
+            lambda: self.client.point_set(channel, voltage, ack_pulse_us),
+        )
 
     def set_sample_rate(self):
         channel = self.timer_channel.currentData()

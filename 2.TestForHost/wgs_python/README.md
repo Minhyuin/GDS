@@ -1,6 +1,6 @@
 # WGS Python Host
 
-WGS Python Host 是用于调试和使用 Waveform Generation System 固件的电脑端工具。它通过串口发送 WGS 协议帧，可以完成连接测试、单点电压输出、1000 点周期波形下发、TIM6/TIM7 触发频率配置，并提供波形预览和 TX/RX 十六进制日志。
+WGS Python Host 是用于调试和使用 Waveform Generation System 固件的电脑端工具。它通过串口发送 WGS 协议帧，可以完成连接测试、单点电压输出、1000 点周期波形下发、TIM4/TIM5 触发频率配置，并提供波形预览和 TX/RX 十六进制日志。
 
 ## 目录结构
 
@@ -83,7 +83,7 @@ PING:
   00
 
 POINT_SET:
-  10 channel float32_le(voltage)
+  10 channel float32_le(voltage) float32_le(ack_pulse_us)
 
 SEQUENCE_SET:
   20 channel uint16_le(sample_count) sample_count * float32_le(voltage)
@@ -95,8 +95,8 @@ TIMER_SET:
 通道：
 
 ```text
-CH1 = 0x01  DAC_OUT1 / TIM6
-CH2 = 0x02  DAC_OUT2 / TIM7
+CH1 = 0x01  DAC_OUT1 / TIM4
+CH2 = 0x02  DAC_OUT2 / TIM5
 ```
 
 应答 payload：
@@ -122,7 +122,7 @@ python scripts/test_protocol.py
 测试会检查：
 
 - `PING` 帧
-- `POINT_SET CH1 1.5V` 帧
+- `POINT_SET CH1 1.5V ACK 5us` 帧
 - `TIMER_SET CH2 100kHz` 帧
 - `SEQUENCE_SET CH2 1000 points` 帧长度和头部
 
@@ -135,7 +135,7 @@ client = WgsClient("COM43", 115200)
 client.open()
 try:
     print(client.ping().summary())
-    print(client.point_set("CH2", 1.65).summary())
+    print(client.point_set("CH2", 1.65, ack_pulse_us=50.0).summary())
     print(client.timer_set("CH2", 10000.0).summary())
     print(client.sequence_set("CH2", [1.65] * 1000).summary())
 finally:

@@ -1,5 +1,6 @@
 import sys
 from pathlib import Path
+import struct
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -52,8 +53,28 @@ def test_client_sync_sends_sync_frame():
         raise AssertionError(f"sync() should return an OK ACK, got {reply.summary()}")
 
 
+def test_client_point_set_sends_ack_pulse_width():
+    original_transport = wgs_client.SerialTransport
+    wgs_client.SerialTransport = FakeTransport
+    try:
+        client = wgs_client.WgsClient("COM_TEST")
+        reply = client.point_set("CH2", 1.5, ack_pulse_us=50.0)
+    finally:
+        wgs_client.SerialTransport = original_transport
+
+    expected = bytes.fromhex("A5 01 0A 00 10 02") + struct.pack("<f", 1.5) + struct.pack("<f", 50.0)
+    if client.last_tx != expected:
+        raise AssertionError(
+            "point_set() should send ACK pulse width\n"
+            f"expected: {expected.hex(' ').upper()}\n"
+            f"actual:   {client.last_tx.hex(' ').upper()}"
+        )
+    if not reply.ok:
+        raise AssertionError(f"point_set() should return an OK ACK, got {reply.summary()}")
+
+
 def run_all():
-    tests = [test_client_sync_sends_sync_frame]
+    tests = [test_client_sync_sends_sync_frame, test_client_point_set_sends_ack_pulse_width]
     for test in tests:
         test()
         print(f"PASS {test.__name__}")

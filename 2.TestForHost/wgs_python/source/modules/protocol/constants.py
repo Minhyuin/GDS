@@ -5,6 +5,8 @@ SOF = 0xA5
 PERIOD_SAMPLE_COUNT = 1000
 MAX_VOLTAGE = 3.3
 MIN_VOLTAGE = 0.0
+MIN_POINT_ACK_PULSE_US = 1.0
+MAX_POINT_ACK_PULSE_US = 1_000_000.0
 
 
 class FrameType(IntEnum):
@@ -41,7 +43,10 @@ class ErrorCode(IntEnum):
     BAD_COMMAND = 0x02
     BAD_LENGTH = 0x03
     INVALID_STATE = 0x04
-    NO_SPACE = 0x05
+    OUT_OF_RANGE = 0x05
+    UNSUPPORTED_COMMAND = 0x06
+    CRC_ERROR = 0x07
+    TRANSPORT_BUSY = 0x08
 
 
 def normalize_channel(channel):

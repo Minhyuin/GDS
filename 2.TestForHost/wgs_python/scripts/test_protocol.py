@@ -31,8 +31,13 @@ def test_sync_frame():
 
 
 def test_point_set_ch1_1v5_frame():
-    expected = bytes.fromhex("A5 01 06 00 10 01") + struct.pack("<f", 1.5)
+    expected = bytes.fromhex("A5 01 0A 00 10 01") + struct.pack("<f", 1.5) + struct.pack("<f", 5.0)
     assert_equal(point_set_frame("CH1", 1.5), expected, "POINT_SET CH1 1.5V frame")
+
+
+def test_point_set_ch2_1v5_50us_frame():
+    expected = bytes.fromhex("A5 01 0A 00 10 02") + struct.pack("<f", 1.5) + struct.pack("<f", 50.0)
+    assert_equal(point_set_frame("CH2", 1.5, ack_pulse_us=50.0), expected, "POINT_SET CH2 1.5V 50us frame")
 
 
 def test_timer_set_ch2_100khz_frame():
@@ -54,6 +59,7 @@ def run_all():
         test_ping_frame,
         test_sync_frame,
         test_point_set_ch1_1v5_frame,
+        test_point_set_ch2_1v5_50us_frame,
         test_timer_set_ch2_100khz_frame,
         test_sequence_set_1000_points_frame_size,
     ]

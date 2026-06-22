@@ -32,11 +32,11 @@ class WgsClient:
     def sync(self):
         return self.send_command(sync_frame())
 
-    def point_set(self, channel, voltage):
-        return self.send_command(point_set_frame(channel, voltage))
+    def point_set(self, channel, voltage, ack_pulse_us=5.0):
+        return self.send_command(point_set_frame(channel, voltage, ack_pulse_us))
 
-    def point_set_no_reply(self, channel, voltage):
-        self.send_command_no_reply(point_set_frame(channel, voltage))
+    def point_set_no_reply(self, channel, voltage, ack_pulse_us=5.0):
+        self.send_command_no_reply(point_set_frame(channel, voltage, ack_pulse_us))
 
     def sequence_set(self, channel, samples):
         return self.send_command(sequence_set_frame(channel, samples))

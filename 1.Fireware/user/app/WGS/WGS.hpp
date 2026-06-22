@@ -34,13 +34,13 @@ private:
   static constexpr size_t MAX_SEQUENCE_POINTS = PROTOCOL::MAX_SEQUENCE_POINTS;
 
   using Usart1 = BSP::UsartProxy<BSP::Usart1HandleProvider>;
-  using Tim6 = BSP::TimProxy<BSP::Tim6HandleProvider>;
-  using Tim7 = BSP::TimProxy<BSP::Tim7HandleProvider>;
+  using Tim4 = BSP::TimProxy<BSP::Tim4HandleProvider>;
+  using Tim5 = BSP::TimProxy<BSP::Tim5HandleProvider>;
 
   using Parser = PROTOCOL::ProtocolParser<PROTOCOL::GdsFrameV1Policy_s>;
 
   using Transport = COMM::UsartDmaTransport<Usart1>;
-  using DacPlayer = OUTPUT::DacWavePlayer<BSP::DacProxy, Tim6, Tim7>;
+  using DacPlayer = OUTPUT::DacWavePlayer<BSP::DacProxy, Tim4, Tim5>;
 
   using ProtocolService =
       COMM::ProtocolService<Transport, Parser, PROTOCOL::GdsFrameV1Policy_s>;

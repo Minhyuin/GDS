@@ -24,7 +24,7 @@ enum class Channel_e : uint8_t {
 
 inline constexpr size_t PERIOD_SAMPLE_COUNT = 1000;
 inline constexpr size_t MAX_SEQUENCE_POINTS = PERIOD_SAMPLE_COUNT;
-inline constexpr size_t POINT_SET_PAYLOAD_SIZE = 6;
+inline constexpr size_t POINT_SET_PAYLOAD_SIZE = 10;
 inline constexpr size_t TIMER_SET_PAYLOAD_SIZE = 6;
 inline constexpr size_t SEQUENCE_SET_HEADER_SIZE = 4;
 inline constexpr size_t SEQUENCE_POINT_SIZE = sizeof(float);
@@ -39,6 +39,7 @@ using DacSample_s = APP::WGS::OUTPUT::DacSample_s;
 struct PointSetCommand_s {
   Channel_e channel{Channel_e::CH1};
   DacSample_s sample{};
+  float ackPulseUs{0.0F};
 };
 
 struct SequenceSetCommand_s {

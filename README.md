@@ -1,9 +1,9 @@
 ## 目录导航
 
-- [1.Fireware](1.Fireware/)：STM32 固件工程。
-  - [WGS 固件模块说明](1.Fireware/user/app/WGS/README.md)
-  - [RTT 调试组件说明](1.Fireware/user/lib/RTT/README.md)
-  - [SystemView 调试组件说明](1.Fireware/user/lib/systemview/README.md)
+- [1.Firmware](1.Firmware/)：STM32 固件工程。
+  - [WGS 固件模块说明](1.Firmware/user/app/WGS/README.md)
+  - [RTT 调试组件说明](1.Firmware/user/lib/RTT/README.md)
+  - [SystemView 调试组件说明](1.Firmware/user/lib/systemview/README.md)
 - [2.TestForHost](2.TestForHost/)：上位机测试与调用工具。
   - [MATLAB 接口说明](2.TestForHost/wgs_matlab/README.md)
   - [Python GUI 上位机说明](2.TestForHost/wgs_python/README.md)
@@ -28,6 +28,6 @@
 
 ## 快速开始
 
-1. 编译并下载 [1.Fireware](1.Fireware/) 固件到 STM32。
+1. 编译并下载 [1.Firmware](1.Firmware/) 固件到 STM32。
 2. 使用串口调试助手，或启动 [Python GUI 上位机](2.TestForHost/wgs_python/README.md) 连接开发板。
 3. 在matlab设计脚本中调用 [MATLAB 接口](2.TestForHost/wgs_matlab/README.md) 发送单点电压、周期波形或采样率配置。

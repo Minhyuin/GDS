@@ -59,12 +59,32 @@ def test_point_set_protocol_carries_ack_pulse_width():
     assert_contains(output_mode, "_cmd.ackPulseUs", "POINT_SET ACK pulse dispatch")
 
 
+def test_waveform_config_protocol_and_dynamic_length():
+    command = read("user/app/WGS/protocol/Command.hpp")
+    wgs_cc = read("user/app/WGS/WGS.cc")
+    store_hpp = read("user/app/WGS/output/WaveformStore.hpp")
+    store_cpp = read("user/app/WGS/output/WaveformStore.cpp")
+    player = read("user/app/WGS/output/DacWavePlayer.hpp")
+    output_mode = read("user/app/WGS/output/OutputMode.hpp")
+
+    assert_contains(command, "WAVEFORM_CONFIG = 0x30", "waveform config command id")
+    assert_contains(command, "WAVEFORM_CONFIG_PAYLOAD_SIZE = 8", "waveform config payload size")
+    assert_contains(command, "WaveformConfigCommand_s", "waveform config command type")
+    assert_contains(command, "frequencyHz", "waveform frequency field")
+    assert_contains(wgs_cc, "readFloat32Le(_frame.payload, 4)", "waveform frequency decode")
+    assert_contains(output_mode, "configureWaveform", "waveform config dispatch")
+    assert_contains(store_hpp, "activeLength", "per-channel active waveform length")
+    assert_contains(store_cpp, "std::min(_samples.size(), activeLength(_channel))", "sequence truncates to active length")
+    assert_contains(player, "channelSamples(_channel)", "DMA uses active channel span")
+
+
 def run_all():
     tests = [
         test_wgs_uses_tim4_tim5_for_dac_output,
         test_timer_proxy_knows_ack_pwm_channels_and_width,
         test_dac_player_uses_ack_pwm_for_point_and_sequence_modes,
         test_point_set_protocol_carries_ack_pulse_width,
+        test_waveform_config_protocol_and_dynamic_length,
     ]
     for test in tests:
         test()

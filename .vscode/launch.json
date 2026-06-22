@@ -6,7 +6,7 @@
       "executable": "./build/GDS.elf",
       "type": "cortex-debug",
       "request": "launch",
-      "cwd": "${workspaceFolder}/1.Fireware",
+      "cwd": "${workspaceFolder}/1.Firmware",
       "showDevDebugOutput": "none",
       "servertype": "jlink",
       "device": "stm32f103ze",
@@ -26,7 +26,7 @@
             "type": "console",
             "label": "cnt",
             "noclear": false,
-            "logfile": "${workspaceFolder}/1.Fireware/.docs/rtt.log",
+            "logfile": "${workspaceFolder}/1.Firmware/.docs/rtt.log",
             "port": 0
           }
         ]
@@ -34,14 +34,14 @@
     },
     {
       "showDevDebugOutput": "none",
-      "cwd": "${workspaceFolder}/1.Fireware",
+      "cwd": "${workspaceFolder}/1.Firmware",
       "executable": "./build/GDS.elf",
       "name": "dap",
       "request": "launch",
       "type": "cortex-debug",
       "servertype": "openocd",
       "configFiles": [
-        "${workspaceFolder}/1.Fireware/tools/openocd/dap.cfg",
+        "${workspaceFolder}/1.Firmware/tools/openocd/dap.cfg",
         "target/stm32f1x.cfg"
       ],
       "liveWatch": {
@@ -66,7 +66,7 @@
             "type": "console",
             "label": "cnt",
             "noclear": false,
-            "logfile": "${workspaceFolder}/1.Fireware/.docs/rtt.log",
+            "logfile": "${workspaceFolder}/1.Firmware/.docs/rtt.log",
             "port": 0
           }
         ]
@@ -74,14 +74,14 @@
     },
     {
       "showDevDebugOutput": "none",
-      "cwd": "${workspaceFolder}/1.Fireware",
+      "cwd": "${workspaceFolder}/1.Firmware",
       "executable": "./build/GDS.elf",
       "name": "stlink",
       "request": "launch",
       "type": "cortex-debug",
       "servertype": "openocd",
       "configFiles": [
-        "${workspaceFolder}/1.Fireware/tools/openocd/stlink.cfg",
+        "${workspaceFolder}/1.Firmware/tools/openocd/stlink.cfg",
         "target/stm32f1x.cfg"
       ],
       "liveWatch": {
@@ -107,7 +107,7 @@
             "type": "console",
             "label": "cnt",
             "noclear": false,
-            "logfile": "${workspaceFolder}/1.Fireware/.docs/rtt.log",
+            "logfile": "${workspaceFolder}/1.Firmware/.docs/rtt.log",
             "port": 0
           }
         ]

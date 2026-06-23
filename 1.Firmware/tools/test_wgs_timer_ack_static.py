@@ -18,6 +18,12 @@ def assert_not_contains(text, needle, label):
         raise AssertionError(f"{label}: did not expect to find {needle!r}")
 
 
+def text_between(text, start, end):
+    start_index = text.index(start)
+    end_index = text.index(end, start_index)
+    return text[start_index:end_index]
+
+
 def test_wgs_uses_tim4_tim5_for_dac_output():
     wgs_hpp = read("user/app/WGS/WGS.hpp")
     assert_contains(wgs_hpp, "Tim4HandleProvider", "WGS CH1 timer provider")
@@ -37,6 +43,16 @@ def test_timer_proxy_knows_ack_pwm_channels_and_width():
     assert_contains(proxy, "TIM_CHANNEL_4", "TIM5 ACK second channel")
     assert_contains(proxy, "pulseOnce", "single point ACK pulse API")
     assert_contains(proxy, "startContinuous", "sequence ACK PWM API")
+
+
+def test_point_ack_uses_hardware_one_pulse_mode():
+    proxy = read("user/bsp/TIM/TimProxy.hpp")
+    pulse_once = text_between(proxy, "static HAL_StatusTypeDef pulseOnce", "  static void resetCounter")
+    assert_contains(proxy, "TIM_CR1_OPM", "POINT_SET ACK should use timer one-pulse mode")
+    assert_contains(proxy, "startSinglePulseDirect", "POINT_SET ACK should use low-overhead direct timer start")
+    assert_contains(proxy, "waitForOnePulseComplete", "POINT_SET ACK should wait for hardware one-pulse completion")
+    assert_not_contains(pulse_once, "HAL_TIM_Base_Start(&timer())", "POINT_SET ACK should not include HAL start overhead in pulse width")
+    assert_not_contains(proxy, "while (__HAL_TIM_GET_COUNTER(&timer()) < pulseTicks)", "POINT_SET ACK should not rely on software stopping at compare")
 
 
 def test_dac_player_uses_ack_pwm_for_point_and_sequence_modes():
@@ -96,6 +112,7 @@ def run_all():
     tests = [
         test_wgs_uses_tim4_tim5_for_dac_output,
         test_timer_proxy_knows_ack_pwm_channels_and_width,
+        test_point_ack_uses_hardware_one_pulse_mode,
         test_dac_player_uses_ack_pwm_for_point_and_sequence_modes,
         test_reset_enters_idle_low_without_ack_continuous_output,
         test_point_set_protocol_carries_ack_pulse_width,

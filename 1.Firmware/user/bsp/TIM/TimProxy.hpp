@@ -66,23 +66,20 @@ public:
     }
 
     resetCounter();
-    enableAckPwmOutputs();
+    enableOnePulseMode();
 
     timer().Instance->EGR = TIM_EGR_UG;
-    status = HAL_TIM_Base_Start(&timer());
-    if (status != HAL_OK) {
-      stopAckPwm();
-      restoreConfig(savedConfig);
-      return status;
-    }
+    __HAL_TIM_CLEAR_FLAG(&timer(), TIM_FLAG_UPDATE);
+    startSinglePulseDirect();
 
-    while (__HAL_TIM_GET_COUNTER(&timer()) < pulseTicks) {
-    }
+    status = waitForOnePulseComplete();
 
-    const auto timerStatus = HAL_TIM_Base_Stop(&timer());
     const auto pwmStatus = stopAckPwm();
     restoreConfig(savedConfig);
-    return timerStatus != HAL_OK ? timerStatus : pwmStatus;
+    if (status != HAL_OK) {
+      return status;
+    }
+    return pwmStatus;
   }
 
   static void resetCounter() { __HAL_TIM_SET_COUNTER(&timer(), 0U); }
@@ -146,6 +143,12 @@ private:
     timer().Instance->CCER |= channelEnableBit(HandleProvider::ACK_CHANNEL_2);
   }
 
+  static void enableAckPwmOutputsTogether() {
+    timer().Instance->CCER |=
+        channelEnableBit(HandleProvider::ACK_CHANNEL_1) |
+        channelEnableBit(HandleProvider::ACK_CHANNEL_2);
+  }
+
   static HAL_StatusTypeDef stopAckPwm() {
     timer().Instance->CCER &= ~channelEnableBit(HandleProvider::ACK_CHANNEL_1);
     timer().Instance->CCER &= ~channelEnableBit(HandleProvider::ACK_CHANNEL_2);
@@ -168,6 +171,7 @@ private:
   }
 
   struct TimerConfig_s {
+    uint32_t control1{0U};
     uint32_t prescaler{0U};
     uint32_t autoReload{0U};
     uint32_t compare1{0U};
@@ -177,6 +181,7 @@ private:
 
   static TimerConfig_s captureConfig() {
     return TimerConfig_s{
+        .control1 = timer().Instance->CR1,
         .prescaler = timer().Instance->PSC,
         .autoReload = timer().Instance->ARR,
         .compare1 = compareValue(HandleProvider::ACK_CHANNEL_1),
@@ -192,6 +197,8 @@ private:
     setCompareValue(HandleProvider::ACK_CHANNEL_2, _config.compare2);
     __HAL_TIM_SET_COUNTER(&timer(), _config.counter);
     timer().Instance->EGR = TIM_EGR_UG;
+    __HAL_TIM_CLEAR_FLAG(&timer(), TIM_FLAG_UPDATE);
+    timer().Instance->CR1 = _config.control1;
   }
 
   static HAL_StatusTypeDef configureSinglePulse(float _pulseWidthUs,
@@ -237,6 +244,26 @@ private:
     __HAL_TIM_SET_AUTORELOAD(&timer(), periodTicks - 1U);
     setAckPulseTicks(pulseTicks);
     _pulseTicks = pulseTicks;
+    return HAL_OK;
+  }
+
+  static void enableOnePulseMode() { timer().Instance->CR1 |= TIM_CR1_OPM; }
+
+  static void startSinglePulseDirect() {
+    const auto irqState = __get_PRIMASK();
+    __disable_irq();
+    timer().State = HAL_TIM_STATE_BUSY;
+    timer().Instance->CR1 |= TIM_CR1_CEN;
+    enableAckPwmOutputsTogether();
+    if (irqState == 0U) {
+      __enable_irq();
+    }
+  }
+
+  static HAL_StatusTypeDef waitForOnePulseComplete() {
+    while ((timer().Instance->CR1 & TIM_CR1_CEN) != 0U) {
+    }
+    timer().State = HAL_TIM_STATE_READY;
     return HAL_OK;
   }
 

@@ -25,7 +25,7 @@ wgs_matlab/
 确保 `+wgs` 的父目录已经加入 MATLAB 路径：
 
 ```matlab
-addpath("test/wgs_matlab")
+addpath("2.TestForHost/wgs_matlab")
 ```
 
 打开串口客户端：
@@ -117,6 +117,88 @@ SafeDtr                 打开端口后的 DTR 状态，默认 false
 SafeRts                 打开端口后的 RTS 状态，默认 false
 ```
 
+## 接口函数参考
+
+普通脚本只应调用 `+wgs` 包顶层函数和 `wgs.Client` 的 public 方法。`wgs.internal.*` 是协议实现细节，不建议在实验脚本中直接依赖。
+
+### 连接和资源管理
+
+| 函数 | 形式 | 返回 | 说明 |
+|---|---|---|---|
+| `wgs.connect` | `client = wgs.connect(port, name, value, ...)` | `wgs.Client` | 打开串口并返回客户端对象。`port` 为空或省略时使用 `"COM43"`。name-value 选项见“构造参数”。 |
+| `wgs.Client` | `client = wgs.Client(port, name, value, ...)` | `wgs.Client` | 类构造函数。通常优先使用 `wgs.connect()`。 |
+| `client.close` | `client.close()` | 无 | 关闭串口对象，并把 DTR/RTS 置为安全状态。建议配合 `onCleanup` 使用。 |
+| `delete` | `delete(client)` | 无 | MATLAB 删除对象时会自动调用 `close()`。 |
+| `client.flushInput` | `client.flushInput()` | 无 | 清空串口输入缓冲。使用 `pointSetNoReply()` 后，回到普通带应答命令前应调用。 |
+
+推荐写法：
+
+```matlab
+client = wgs.connect("COM43");
+cleanupObj = onCleanup(@() client.close());
+```
+
+### 命令函数
+
+所有带返回值的命令函数都会发送一帧 `COMMAND`，等待固件 `ACK` 或 `NACK`，并返回 `reply` 结构体。`reply` 的常用字段如下：
+
+```text
+reply.isAck        true 表示帧类型为 ACK
+reply.isNack       true 表示帧类型为 NACK
+reply.status       原始 status 字节
+reply.detail       原始 detail/error 字节
+reply.statusName   status 文本，例如 DONE / ERROR
+reply.detailName   detail 文本，例如 NONE / INVALID_STATE
+```
+
+| 函数 | 形式 | 参数 | 返回 | 注意事项 |
+|---|---|---|---|---|
+| `client.ping` | `reply = client.ping()` | 无 | `reply` | 通信自检命令，不改变 DAC 输出。 |
+| `client.sync` | `reply = client.sync()` | 无 | `reply` | 同步 CH1/CH2 序列相位。仅当 CH1 和 CH2 都已处于序列播放状态时有效；否则固件返回 `NACK / INVALID_STATE`。 |
+| `client.pointSet` | `reply = client.pointSet(channel, voltage)` | `channel`, `voltage` | `reply` | 单点模式。停止对应通道 DMA，使该通道保持目标电压。默认 ACK 脉宽为 `5 us`。 |
+| `client.pointSet` | `reply = client.pointSet(channel, voltage, ackPulseUs)` | `channel`, `voltage`, `ackPulseUs` | `reply` | `ackPulseUs` 单位为 us，允许范围为 `1..1000000`。 |
+| `client.pointSetNoReply` | `client.pointSetNoReply(channel, voltage)` | `channel`, `voltage` | 无 | 只发送命令，不等待 ACK/NACK。适合低速逐点扫描；后续使用带应答命令前调用 `flushInput()`。 |
+| `client.pointSetNoReply` | `client.pointSetNoReply(channel, voltage, ackPulseUs)` | `channel`, `voltage`, `ackPulseUs` | 无 | 与 `pointSet()` 帧格式相同，但不会检查固件是否接受该命令。 |
+| `client.waveformConfig` | `reply = client.waveformConfig(channel, lengthSa, frequencyHz)` | `channel`, `lengthSa`, `frequencyHz` | `reply` | 配置通道波形长度和波形频率。`lengthSa` 必须为 `1..1000` 的整数，且 `lengthSa * frequencyHz <= 100000 Sa/s`。 |
+| `client.sequenceSet` | `reply = client.sequenceSet(channel, samples, frequencyHz)` | `channel`, `samples`, `frequencyHz` | `reply` | 推荐的序列发送入口。客户端会先调用 `waveformConfig(channel, numel(samples), frequencyHz)`，成功后再发送 `samples`。 |
+| `client.setSampleRate` | `reply = client.setSampleRate(channel, sampleRateHz)` | `channel`, `sampleRateHz` | `reply` | 直接设置 DAC 更新采样率。一般优先使用 `sequenceSet()` 或 `waveformConfig()`，避免长度和频率概念脱节。 |
+| `client.setWaveFrequency` | `reply = client.setWaveFrequency(channel, waveformFrequencyHz)` | `channel`, `waveformFrequencyHz` | `reply` | 旧的便捷接口，按固定 `1000` 点周期换算采样率：`sampleRateHz = waveformFrequencyHz * 1000`。动态长度场景建议改用 `waveformConfig()` 或 `sequenceSet()`。 |
+| `wgs.printReply` | `wgs.printReply(label, reply)` | `label`, `reply` | 无 | 打印紧凑的 `ACK/NACK status/detail` 摘要。 |
+
+### 参数说明
+
+`channel` 支持以下写法：
+
+```matlab
+1, 2, "CH1", "CH2", "CHANNEL1", "CHANNEL2", "X", "Y"
+```
+
+通道对应关系：
+
+```text
+CH1 / X -> DAC_OUT1 / PA4 / TIM4
+CH2 / Y -> DAC_OUT2 / PA5 / TIM5
+```
+
+`voltage` 和 `samples` 的单位均为伏特。固件会把电压线性映射到 12 位 DAC code，并把超出 `0.0..3.3 V` 的值限幅到有效范围。为了让实验结果可预期，建议在 MATLAB 侧自行限制电压范围，不要依赖固件限幅作为正常控制逻辑。
+
+`samples` 可以是行向量或列向量，客户端会内部 reshape 成一维数组。当前固件每通道最大波形长度为 `1000 Sa`。
+
+`frequencyHz` 是整个波形周期的重复频率，不是单个采样点的更新频率。实际采样率为：
+
+```text
+sampleRateHz = numel(samples) * frequencyHz
+```
+
+`ackPulseUs` 只影响单点模式 ACK 引脚的脉冲宽度；序列模式 ACK 脉宽由采样周期的一半决定，例如 `100 kSa/s` 时采样周期为 `10 us`，ACK 脉宽约为 `5 us`。
+
+### 调用顺序建议
+
+- 单点保持：直接调用 `pointSet()`。
+- 周期波形：优先调用 `sequenceSet(channel, samples, frequencyHz)`，让客户端先配置长度/频率再发送序列。
+- 双通道同相启动：先分别对 CH1、CH2 调用 `sequenceSet()`，确认都返回 ACK 后，再调用 `sync()`。
+- 高速或长序列发送时，不要并发操作同一个串口；每条带应答命令应等待返回后再发送下一条。
+
 ## DTR/RTS 注意事项
 
 CH340 转接器可能会暴露 DTR/RTS 调制解调器控制线。在某些开发板上，这些控制线会通过自动下载电路连接到 `NRST` 或 `BOOT0`。MATLAB 的 `serialport()` 在打开端口时可能会切换这些控制线，从而导致 STM32 复位或进入系统 bootloader。
@@ -154,6 +236,9 @@ payload  N bytes
 ```text
 PING:
   payload = 00
+
+SYNC:
+  payload = 01
 
 POINT_SET:
   payload = 10 channel float32_le(voltage) float32_le(ack_pulse_us)

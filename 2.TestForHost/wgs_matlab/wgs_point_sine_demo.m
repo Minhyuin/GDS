@@ -16,7 +16,7 @@ pointRateWavePeriods = 100;
 durationSeconds = 60;
 pointRateHz = pointRateWavePeriods * waveFrequencyHz;
 
-client = wgs.connect(port, "BaudRate", 115200, "Timeout", 5.0, ...
+client = wgs.connect(port, "BaudRate", 921600, "Timeout", 5.0, ...
                      "Verbose", false);
 cleanupObj = onCleanup(@() client.close());
 

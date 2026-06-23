@@ -81,7 +81,7 @@ class MainWindow(QMainWindow):
         layout = QGridLayout(box)
         self.port_combo = QComboBox()
         self.baud_combo = QComboBox()
-        self.baud_combo.addItems(["115200", "230400", "460800", "921600"])
+        self.baud_combo.addItems(["921600", "460800", "230400", "115200"])
         self.refresh_button = QPushButton("Refresh")
         self.connect_button = QPushButton("Connect")
         self.ping_button = QPushButton("Ping")

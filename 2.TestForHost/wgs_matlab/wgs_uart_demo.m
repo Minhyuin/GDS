@@ -7,7 +7,7 @@ clear;
 
 port = "COM43";
 
-client = wgs.connect(port, "BaudRate", 115200, "Timeout", 5.0, ...
+client = wgs.connect(port, "BaudRate", 921600, "Timeout", 5.0, ...
                         "Verbose", true);
 cleanupObj = onCleanup(@() client.close());
 

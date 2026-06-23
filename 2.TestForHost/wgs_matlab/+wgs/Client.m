@@ -3,7 +3,7 @@ classdef Client < handle
 
     properties
         Port = "COM43"
-        BaudRate = 115200
+        BaudRate = 921600
         Timeout = 5.0
         OpenStabilizeSeconds = 2.0
         MaxAttempts = 3

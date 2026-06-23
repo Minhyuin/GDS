@@ -11,7 +11,7 @@ def list_serial_ports():
 
 
 class SerialTransport:
-    def __init__(self, port, baudrate=115200, timeout=0.2, read_timeout=None, write_timeout=3.0):
+    def __init__(self, port, baudrate=921600, timeout=0.2, read_timeout=None, write_timeout=3.0):
         self.port = port
         self.baudrate = int(baudrate)
         self.read_timeout = float(timeout if read_timeout is None else read_timeout)

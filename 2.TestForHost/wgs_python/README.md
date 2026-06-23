@@ -41,7 +41,7 @@ python main.py
 典型连接参数：
 
 - Port: 例如 `COM43`
-- Baud: 默认 `115200`
+- Baud: 默认 `921600`
 - DTR/RTS: 程序会在打开串口后置为 `False`，避免 CH340 打开串口时复位或干扰单片机状态
 
 ## GUI 功能
@@ -135,7 +135,7 @@ python scripts/test_protocol.py
 ```python
 from source.modules.client import WgsClient
 
-client = WgsClient("COM43", 115200)
+client = WgsClient("COM43", 921600)
 client.open()
 try:
     print(client.ping().summary())

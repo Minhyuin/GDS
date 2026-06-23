@@ -10,7 +10,7 @@ from source.modules.transport.serial_transport import SerialTransport  # noqa: E
 
 
 def test_sequence_write_timeout_covers_wire_time():
-    baudrate = 115200
+    baudrate = 921600
     frame = sequence_set_frame("CH2", [1.65] * 1000)
     transport = SerialTransport("COM_TEST", baudrate=baudrate, read_timeout=0.05, write_timeout=0.2)
 

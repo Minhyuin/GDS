@@ -1,6 +1,6 @@
 # WGS Python Host
 
-WGS Python Host 是用于调试和使用 Waveform Generation System 固件的电脑端工具。它通过串口发送 WGS 协议帧，可以完成连接测试、单点电压输出、可配置长度/频率的周期波形下发、TIM4/TIM5 触发频率配置，并提供波形预览和 TX/RX 十六进制日志。
+WGS Python Host 是用于调试和使用 Waveform Generation System 固件的电脑端工具。它通过串口发送 WGS 协议帧，可以完成连接测试、单点电压输出、双通道单点输出、单点脉宽独立设置、可配置长度/频率的周期波形下发、TIM4/TIM5 触发频率配置，并提供波形预览和 TX/RX 十六进制日志。
 
 ## 目录结构
 
@@ -50,6 +50,8 @@ python main.py
 - `Connect`: 打开或关闭串口
 - `Ping`: 发送 `PING`
 - `Point Set`: 对 CH1 或 CH2 直接输出目标电压
+- `Point2 Set`: 在一帧里同时输出 CH1 / CH2 的目标电压
+- `Point Pulse`: 独立设置单点模式脉宽
 - `Timer`: 设置通道采样率，或按波形频率自动换算为 `sample_rate = wave_frequency * 1000`
 - `Sequence Set`: 生成并发送周期波形，支持 `sine/cosine/square/triangle/constant`
 - 右侧曲线区域显示即将发送的波形
@@ -83,7 +85,13 @@ PING:
   00
 
 POINT_SET:
-  10 channel float32_le(voltage) float32_le(ack_pulse_us)
+  10 channel float32_le(voltage)
+
+POINT2_SET:
+  11 float32_le(ch1_voltage) float32_le(ch2_voltage)
+
+POINT_PULSE_WIDTH_SET:
+  50 float32_le(pulse_width_us)
 
 SEQUENCE_SET:
   20 channel uint16_le(sample_count) sample_count * float32_le(voltage)
@@ -125,7 +133,9 @@ python scripts/test_protocol.py
 测试会检查：
 
 - `PING` 帧
-- `POINT_SET CH1 1.5V ACK 5us` 帧
+- `POINT_SET CH1 1.5V` 帧
+- `POINT2_SET CH1 1.5V CH2 2.5V` 帧
+- `POINT_PULSE_WIDTH_SET 50us` 帧
 - `WAVEFORM_CONFIG CH2 256Sa 12.5Hz` 帧
 - `TIMER_SET CH2 100kHz` 帧
 - `SEQUENCE_SET CH2 1000 points` 帧长度和头部
@@ -139,7 +149,9 @@ client = WgsClient("COM43", 921600)
 client.open()
 try:
     print(client.ping().summary())
-    print(client.point_set("CH2", 1.65, ack_pulse_us=50.0).summary())
+    print(client.point_set("CH2", 1.65).summary())
+    print(client.point2_set(1.65, 2.50).summary())
+    print(client.point_pulse_width_set(50.0).summary())
     print(client.sequence_set("CH2", [1.65] * 256, frequency_hz=12.5).summary())
 finally:
     client.close()

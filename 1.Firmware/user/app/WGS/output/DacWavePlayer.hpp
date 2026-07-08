@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Command.hpp"
 #include "DacTypes.hpp"
 #include "Result.hpp"
 #include "WaveformStore.hpp"
@@ -17,6 +18,8 @@ public:
       WaveformStore::PERIOD_SAMPLE_COUNT;
   static constexpr float MIN_SAMPLE_RATE_HZ = 1.0F;
   static constexpr float MAX_SAMPLE_RATE_HZ = 100000.0F; // 100k Sa/s
+  static constexpr float MIN_POINT_PULSE_WIDTH_US = 1.0F;
+  static constexpr float MAX_POINT_PULSE_WIDTH_US = 1000000.0F;
 
   DacWavePlayer() = default;
   ~DacWavePlayer() { stop(); }
@@ -159,6 +162,57 @@ public:
     return APP::WGS::PROTOCOL::Result_s::success();
   }
 
+  APP::WGS::PROTOCOL::Result_s holdChannels(uint16_t _ch1Sample,
+                                            uint16_t _ch2Sample,
+                                            float _ackPulseUs) {
+    if (DacHardware::stopDma(DAC_CHANNEL_1) != HAL_OK) {
+      return fail();
+    }
+    if (DacHardware::stopDma(DAC_CHANNEL_2) != HAL_OK) {
+      return fail();
+    }
+    DMAch1Hardware::stopContinuous();
+    DMAch2Hardware::stopContinuous();
+    if (DacHardware::setDacValue(DAC_CHANNEL_1, _ch1Sample) != HAL_OK) {
+      return fail();
+    }
+    if (DacHardware::setDacValue(DAC_CHANNEL_2, _ch2Sample) != HAL_OK) {
+      return fail();
+    }
+    if (DacHardware::startDac(DAC_CHANNEL_1) != HAL_OK) {
+      return fail();
+    }
+    if (DacHardware::startDac(DAC_CHANNEL_2) != HAL_OK) {
+      return fail();
+    }
+
+    if (pulseTimer(OutputChannel_e::CH1, _ackPulseUs) != HAL_OK) {
+      return fail();
+    }
+    if (pulseTimer(OutputChannel_e::CH2, _ackPulseUs) != HAL_OK) {
+      return fail();
+    }
+
+    sequencePlayingCh1_ = false;
+    sequencePlayingCh2_ = false;
+    state_ = PlayerState_e::READY;
+    return APP::WGS::PROTOCOL::Result_s::success();
+  }
+
+  APP::WGS::PROTOCOL::Result_s setPointPulseWidth(float _pulseWidthUs) {
+    if (!std::isfinite(_pulseWidthUs) ||
+        _pulseWidthUs < APP::WGS::PROTOCOL::POINT_PULSE_WIDTH_MIN_US ||
+        _pulseWidthUs > APP::WGS::PROTOCOL::POINT_PULSE_WIDTH_MAX_US) {
+      return APP::WGS::PROTOCOL::Result_s::fail(
+          APP::WGS::PROTOCOL::ErrorCode_e::OUT_OF_RANGE);
+    }
+
+    pointPulseWidthUs_ = _pulseWidthUs;
+    return APP::WGS::PROTOCOL::Result_s::success();
+  }
+
+  float pointPulseWidthUs() const { return pointPulseWidthUs_; }
+
   APP::WGS::PROTOCOL::Result_s setSampleRate(OutputChannel_e _channel,
                                              float _sampleRateHz) {
     if (_sampleRateHz < MIN_SAMPLE_RATE_HZ ||
@@ -264,6 +318,7 @@ private:
   PlayerState_e state_{PlayerState_e::STOPPED};
   bool sequencePlayingCh1_{false};
   bool sequencePlayingCh2_{false};
+  float pointPulseWidthUs_{APP::WGS::PROTOCOL::POINT_PULSE_WIDTH_DEFAULT_US};
 };
 
 } // namespace APP::WGS::OUTPUT

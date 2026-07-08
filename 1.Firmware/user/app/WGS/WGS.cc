@@ -11,8 +11,6 @@ namespace APP::WGS {
 namespace {
 WGSManager *activeWgs = nullptr;
 constexpr float MAX_OUTPUT_VOLTAGE = 3.3F;
-constexpr float MIN_POINT_ACK_PULSE_US = 1.0F;
-constexpr float MAX_POINT_ACK_PULSE_US = 1000000.0F;
 
 uint32_t readU32(std::span<const std::byte> _bytes, size_t _offset) {
   return static_cast<uint32_t>(
@@ -218,16 +216,39 @@ PROTOCOL::Result_s WGSManager::decodeCommand(const PROTOCOL::Frame_s &_frame,
     }
 
     const float voltage = readFloat32Le(_frame.payload, 2);
-    const float ackPulseUs = readFloat32Le(_frame.payload, 6);
-    if (!std::isfinite(ackPulseUs) || ackPulseUs < MIN_POINT_ACK_PULSE_US ||
-        ackPulseUs > MAX_POINT_ACK_PULSE_US) {
-      return PROTOCOL::Result_s::fail(PROTOCOL::ErrorCode_e::OUT_OF_RANGE);
-    }
-
     _command = PROTOCOL::PointSetCommand_s{
         .channel = channel,
         .sample = PROTOCOL::DacSample_s{.value = voltageToDacCode(voltage)},
-        .ackPulseUs = ackPulseUs,
+    };
+    return PROTOCOL::Result_s::success();
+  }
+  case PROTOCOL::CommandType_e::POINT2_SET: {
+    if (_frame.payload.size() != PROTOCOL::POINT2_SET_PAYLOAD_SIZE) {
+      return PROTOCOL::Result_s::fail(PROTOCOL::ErrorCode_e::BAD_LENGTH);
+    }
+
+    const float ch1Voltage = readFloat32Le(_frame.payload, 1);
+    const float ch2Voltage = readFloat32Le(_frame.payload, 5);
+
+    _command = PROTOCOL::Point2SetCommand_s{
+        .ch1Sample = PROTOCOL::DacSample_s{.value = voltageToDacCode(ch1Voltage)},
+        .ch2Sample = PROTOCOL::DacSample_s{.value = voltageToDacCode(ch2Voltage)},
+    };
+    return PROTOCOL::Result_s::success();
+  }
+  case PROTOCOL::CommandType_e::POINT_PULSE_WIDTH_SET: {
+    if (_frame.payload.size() != PROTOCOL::POINT_PULSE_WIDTH_SET_PAYLOAD_SIZE) {
+      return PROTOCOL::Result_s::fail(PROTOCOL::ErrorCode_e::BAD_LENGTH);
+    }
+
+    const float pulseWidthUs = readFloat32Le(_frame.payload, 1);
+    if (!std::isfinite(pulseWidthUs) || pulseWidthUs < 1.0F ||
+        pulseWidthUs > 1000000.0F) {
+      return PROTOCOL::Result_s::fail(PROTOCOL::ErrorCode_e::OUT_OF_RANGE);
+    }
+
+    _command = PROTOCOL::PointPulseWidthSetCommand_s{
+        .pulseWidthUs = pulseWidthUs,
     };
     return PROTOCOL::Result_s::success();
   }

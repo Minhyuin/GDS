@@ -87,12 +87,42 @@ public:
     }
 
     const auto channel = toOutputChannel(_cmd.channel);
-    auto result =
-        _ctx.player->holdChannel(channel, _cmd.sample.value, _cmd.ackPulseUs);
+    auto result = _ctx.player->holdChannel(
+        channel, _cmd.sample.value, _ctx.player->pointPulseWidthUs());
     if (result.ok()) {
       _ctx.state = OutputState_e::BUFFERING;
     }
     return result;
+  }
+
+  APP::WGS::PROTOCOL::Result_s
+  handle(OutputContext_s<Player_s> &_ctx,
+         const APP::WGS::PROTOCOL::Point2SetCommand_s &_cmd) {
+    if (_ctx.player == nullptr) {
+      _ctx.state = OutputState_e::FAULT;
+      return APP::WGS::PROTOCOL::Result_s::fail(
+          APP::WGS::PROTOCOL::ErrorCode_e::INVALID_STATE);
+    }
+
+    auto result =
+        _ctx.player->holdChannels(_cmd.ch1Sample.value, _cmd.ch2Sample.value,
+                                  _ctx.player->pointPulseWidthUs());
+    if (result.ok()) {
+      _ctx.state = OutputState_e::BUFFERING;
+    }
+    return result;
+  }
+
+  APP::WGS::PROTOCOL::Result_s
+  handle(OutputContext_s<Player_s> &_ctx,
+         const APP::WGS::PROTOCOL::PointPulseWidthSetCommand_s &_cmd) {
+    if (_ctx.player == nullptr) {
+      _ctx.state = OutputState_e::FAULT;
+      return APP::WGS::PROTOCOL::Result_s::fail(
+          APP::WGS::PROTOCOL::ErrorCode_e::INVALID_STATE);
+    }
+
+    return _ctx.player->setPointPulseWidth(_cmd.pulseWidthUs);
   }
 
   APP::WGS::PROTOCOL::Result_s

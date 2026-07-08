@@ -76,17 +76,20 @@ def test_reset_enters_idle_low_without_ack_continuous_output():
     assert_contains(player, "if (!canSync())", "idle SYNC should not start DMA/timer ACK output")
 
 
-def test_point_set_protocol_carries_ack_pulse_width():
+def test_point_set_protocol_uses_voltage_only_and_exposes_point_modes():
     command = read("user/app/WGS/protocol/Command.hpp")
     wgs_cc = read("user/app/WGS/WGS.cc")
     output_mode = read("user/app/WGS/output/OutputMode.hpp")
 
-    assert_contains(command, "POINT_SET_PAYLOAD_SIZE = 10", "POINT_SET payload includes ack pulse width")
-    assert_contains(command, "ackPulseUs", "POINT_SET command stores ACK pulse width")
-    assert_contains(wgs_cc, "MIN_POINT_ACK_PULSE_US", "POINT_SET ACK pulse minimum")
-    assert_contains(wgs_cc, "MAX_POINT_ACK_PULSE_US", "POINT_SET ACK pulse maximum")
-    assert_contains(wgs_cc, "readFloat32Le(_frame.payload, 6)", "POINT_SET ACK pulse decode")
-    assert_contains(output_mode, "_cmd.ackPulseUs", "POINT_SET ACK pulse dispatch")
+    assert_contains(command, "POINT_SET_PAYLOAD_SIZE = 6", "POINT_SET payload should only include voltage")
+    assert_contains(command, "POINT2_SET = 0x11", "POINT2_SET command id")
+    assert_contains(command, "POINT2_SET_PAYLOAD_SIZE = 9", "POINT2_SET payload size")
+    assert_contains(command, "POINT_PULSE_WIDTH_SET = 0x50", "point pulse width command id")
+    assert_contains(command, "POINT_PULSE_WIDTH_DEFAULT_US = 10.0F", "default point pulse width")
+    assert_contains(wgs_cc, "POINT2_SET_PAYLOAD_SIZE", "POINT2_SET decode path")
+    assert_contains(wgs_cc, "POINT_PULSE_WIDTH_SET_PAYLOAD_SIZE", "point pulse width decode path")
+    assert_contains(output_mode, "Point2SetCommand_s", "POINT2_SET dispatch")
+    assert_contains(output_mode, "PointPulseWidthSetCommand_s", "point pulse width dispatch")
 
 
 def test_waveform_config_protocol_and_dynamic_length():
@@ -115,7 +118,7 @@ def run_all():
         test_point_ack_uses_hardware_one_pulse_mode,
         test_dac_player_uses_ack_pwm_for_point_and_sequence_modes,
         test_reset_enters_idle_low_without_ack_continuous_output,
-        test_point_set_protocol_carries_ack_pulse_width,
+        test_point_set_protocol_uses_voltage_only_and_exposes_point_modes,
         test_waveform_config_protocol_and_dynamic_length,
     ]
     for test in tests:

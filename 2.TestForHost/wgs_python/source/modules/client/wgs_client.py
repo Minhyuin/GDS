@@ -1,6 +1,8 @@
 from ..protocol.codec import (
     ping_frame,
     point_set_frame,
+    point2_set_frame,
+    point_pulse_width_set_frame,
     sequence_set_frame,
     sync_frame,
     timer_set_frame,
@@ -39,11 +41,20 @@ class WgsClient:
     def sync(self):
         return self.send_command(sync_frame())
 
-    def point_set(self, channel, voltage, ack_pulse_us=5.0):
-        return self.send_command(point_set_frame(channel, voltage, ack_pulse_us))
+    def point_set(self, channel, voltage):
+        return self.send_command(point_set_frame(channel, voltage))
 
-    def point_set_no_reply(self, channel, voltage, ack_pulse_us=5.0):
-        self.send_command_no_reply(point_set_frame(channel, voltage, ack_pulse_us))
+    def point_set_no_reply(self, channel, voltage):
+        self.send_command_no_reply(point_set_frame(channel, voltage))
+
+    def point2_set(self, ch1_voltage, ch2_voltage):
+        return self.send_command(point2_set_frame(ch1_voltage, ch2_voltage))
+
+    def point2_set_no_reply(self, ch1_voltage, ch2_voltage):
+        self.send_command_no_reply(point2_set_frame(ch1_voltage, ch2_voltage))
+
+    def point_pulse_width_set(self, pulse_width_us):
+        return self.send_command(point_pulse_width_set_frame(pulse_width_us))
 
     def waveform_config(self, channel, length_sa, frequency_hz):
         return self.send_command(waveform_config_frame(channel, length_sa, frequency_hz))

@@ -68,7 +68,8 @@ sample_rate_hz = length(samples) * waveform_frequency_hz
 
 ```matlab
 reply = client.pointSet(1, 1.65);          % CH1 保持 1.65 V
-reply = client.pointSet(2, 1.65, 50.0);    % CH2 保持 1.65 V，ACK 脉宽 50 us
+reply = client.point2Set(1.65, 2.50);      % 同时设置 CH1 / CH2
+reply = client.pointPulseWidthSet(50.0);   % 单点模式脉宽 50 us
 ```
 
 输出单通道周期波形：
@@ -155,10 +156,11 @@ reply.detailName   detail 文本，例如 NONE / INVALID_STATE
 |---|---|---|---|---|
 | `client.ping` | `reply = client.ping()` | 无 | `reply` | 通信自检命令，不改变 DAC 输出。 |
 | `client.sync` | `reply = client.sync()` | 无 | `reply` | 同步 CH1/CH2 序列相位。仅当 CH1 和 CH2 都已处于序列播放状态时有效；否则固件返回 `NACK / INVALID_STATE`。 |
-| `client.pointSet` | `reply = client.pointSet(channel, voltage)` | `channel`, `voltage` | `reply` | 单点模式。停止对应通道 DMA，使该通道保持目标电压。默认 ACK 脉宽为 `5 us`。 |
-| `client.pointSet` | `reply = client.pointSet(channel, voltage, ackPulseUs)` | `channel`, `voltage`, `ackPulseUs` | `reply` | `ackPulseUs` 单位为 us，允许范围为 `1..1000000`。 |
+| `client.pointSet` | `reply = client.pointSet(channel, voltage)` | `channel`, `voltage` | `reply` | 单点模式。停止对应通道 DMA，使该通道保持目标电压。 |
 | `client.pointSetNoReply` | `client.pointSetNoReply(channel, voltage)` | `channel`, `voltage` | 无 | 只发送命令，不等待 ACK/NACK。适合低速逐点扫描；后续使用带应答命令前调用 `flushInput()`。 |
-| `client.pointSetNoReply` | `client.pointSetNoReply(channel, voltage, ackPulseUs)` | `channel`, `voltage`, `ackPulseUs` | 无 | 与 `pointSet()` 帧格式相同，但不会检查固件是否接受该命令。 |
+| `client.point2Set` | `reply = client.point2Set(ch1Voltage, ch2Voltage)` | `ch1Voltage`, `ch2Voltage` | `reply` | 同一帧同时输出 CH1 / CH2 的目标电压。 |
+| `client.point2SetNoReply` | `client.point2SetNoReply(ch1Voltage, ch2Voltage)` | `ch1Voltage`, `ch2Voltage` | 无 | 与 `point2Set()` 帧格式相同，但不会检查固件是否接受该命令。 |
+| `client.pointPulseWidthSet` | `reply = client.pointPulseWidthSet(pulseWidthUs)` | `pulseWidthUs` | `reply` | 单点模式脉宽独立设置，允许范围为 `1..1000000`，默认值为 `10 us`。 |
 | `client.waveformConfig` | `reply = client.waveformConfig(channel, lengthSa, frequencyHz)` | `channel`, `lengthSa`, `frequencyHz` | `reply` | 配置通道波形长度和波形频率。`lengthSa` 必须为 `1..1000` 的整数，且 `lengthSa * frequencyHz <= 100000 Sa/s`。 |
 | `client.sequenceSet` | `reply = client.sequenceSet(channel, samples, frequencyHz)` | `channel`, `samples`, `frequencyHz` | `reply` | 推荐的序列发送入口。客户端会先调用 `waveformConfig(channel, numel(samples), frequencyHz)`，成功后再发送 `samples`。 |
 | `client.setSampleRate` | `reply = client.setSampleRate(channel, sampleRateHz)` | `channel`, `sampleRateHz` | `reply` | 直接设置 DAC 更新采样率。一般优先使用 `sequenceSet()` 或 `waveformConfig()`，避免长度和频率概念脱节。 |
@@ -190,11 +192,13 @@ CH2 / Y -> DAC_OUT2 / PA5 / TIM5
 sampleRateHz = numel(samples) * frequencyHz
 ```
 
-`ackPulseUs` 只影响单点模式 ACK 引脚的脉冲宽度；序列模式 ACK 脉宽由采样周期的一半决定，例如 `100 kSa/s` 时采样周期为 `10 us`，ACK 脉宽约为 `5 us`。
+`pointPulseWidthSet()` 只影响单点模式的脉冲宽度；序列模式 ACK 脉宽由采样周期的一半决定，例如 `100 kSa/s` 时采样周期为 `10 us`，ACK 脉宽约为 `5 us`。
 
 ### 调用顺序建议
 
 - 单点保持：直接调用 `pointSet()`。
+- 双通道单点输出：调用 `point2Set()`。
+- 单点脉宽独立设置：调用 `pointPulseWidthSet()`。
 - 周期波形：优先调用 `sequenceSet(channel, samples, frequencyHz)`，让客户端先配置长度/频率再发送序列。
 - 双通道同相启动：先分别对 CH1、CH2 调用 `sequenceSet()`，确认都返回 ACK 后，再调用 `sync()`。
 - 高速或长序列发送时，不要并发操作同一个串口；每条带应答命令应等待返回后再发送下一条。
@@ -241,7 +245,13 @@ SYNC:
   payload = 01
 
 POINT_SET:
-  payload = 10 channel float32_le(voltage) float32_le(ack_pulse_us)
+  payload = 10 channel float32_le(voltage)
+
+POINT2_SET:
+  payload = 11 float32_le(ch1_voltage) float32_le(ch2_voltage)
+
+POINT_PULSE_WIDTH_SET:
+  payload = 50 float32_le(pulse_width_us)
 
 SEQUENCE_SET:
   payload = 20 channel uint16_le(sampleCount)

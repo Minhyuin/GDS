@@ -1,6 +1,6 @@
+import struct
 import sys
 from pathlib import Path
-import struct
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -55,24 +55,64 @@ def test_client_sync_sends_sync_frame():
         raise AssertionError(f"sync() should return an OK ACK, got {reply.summary()}")
 
 
-def test_client_point_set_sends_ack_pulse_width():
+def test_client_point_set_sends_voltage_only():
     original_transport = wgs_client.SerialTransport
     wgs_client.SerialTransport = FakeTransport
     try:
         client = wgs_client.WgsClient("COM_TEST")
-        reply = client.point_set("CH2", 1.5, ack_pulse_us=50.0)
+        reply = client.point_set("CH2", 1.5)
     finally:
         wgs_client.SerialTransport = original_transport
 
-    expected = bytes.fromhex("A5 01 0A 00 10 02") + struct.pack("<f", 1.5) + struct.pack("<f", 50.0)
+    expected = bytes.fromhex("A5 01 06 00 10 02") + struct.pack("<f", 1.5)
     if client.last_tx != expected:
         raise AssertionError(
-            "point_set() should send ACK pulse width\n"
+            "point_set() should send only channel voltage\n"
             f"expected: {expected.hex(' ').upper()}\n"
             f"actual:   {client.last_tx.hex(' ').upper()}"
         )
     if not reply.ok:
         raise AssertionError(f"point_set() should return an OK ACK, got {reply.summary()}")
+
+
+def test_client_point2_set_sends_dual_voltage_frame():
+    original_transport = wgs_client.SerialTransport
+    wgs_client.SerialTransport = FakeTransport
+    try:
+        client = wgs_client.WgsClient("COM_TEST")
+        reply = client.point2_set(1.5, 2.5)
+    finally:
+        wgs_client.SerialTransport = original_transport
+
+    expected = bytes.fromhex("A5 01 09 00 11") + struct.pack("<f", 1.5) + struct.pack("<f", 2.5)
+    if client.last_tx != expected:
+        raise AssertionError(
+            "point2_set() should send CH1 and CH2 voltages\n"
+            f"expected: {expected.hex(' ').upper()}\n"
+            f"actual:   {client.last_tx.hex(' ').upper()}"
+        )
+    if not reply.ok:
+        raise AssertionError(f"point2_set() should return an OK ACK, got {reply.summary()}")
+
+
+def test_client_point_pulse_width_set_sends_global_width():
+    original_transport = wgs_client.SerialTransport
+    wgs_client.SerialTransport = FakeTransport
+    try:
+        client = wgs_client.WgsClient("COM_TEST")
+        reply = client.point_pulse_width_set(50.0)
+    finally:
+        wgs_client.SerialTransport = original_transport
+
+    expected = bytes.fromhex("A5 01 05 00 50") + struct.pack("<f", 50.0)
+    if client.last_tx != expected:
+        raise AssertionError(
+            "point_pulse_width_set() should send the standalone pulse width frame\n"
+            f"expected: {expected.hex(' ').upper()}\n"
+            f"actual:   {client.last_tx.hex(' ').upper()}"
+        )
+    if not reply.ok:
+        raise AssertionError(f"point_pulse_width_set() should return an OK ACK, got {reply.summary()}")
 
 
 def test_client_sequence_set_configures_length_and_frequency_first():
@@ -99,7 +139,9 @@ def test_client_sequence_set_configures_length_and_frequency_first():
 def run_all():
     tests = [
         test_client_sync_sends_sync_frame,
-        test_client_point_set_sends_ack_pulse_width,
+        test_client_point_set_sends_voltage_only,
+        test_client_point2_set_sends_dual_voltage_frame,
+        test_client_point_pulse_width_set_sends_global_width,
         test_client_sequence_set_configures_length_and_frequency_first,
     ]
     for test in tests:

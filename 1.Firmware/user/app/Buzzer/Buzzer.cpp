@@ -14,8 +14,8 @@ BuzzerTask::BuzzerTask() { activeBuzzer = this; }
 bool BuzzerTask::init() {
   HAL_GPIO_WritePin(Buzzer_GPIO_Port, Buzzer_Pin, GPIO_PIN_RESET);
 
-  semaphore_ = xSemaphoreCreateCountingStatic(MAX_PENDING_BEEPS, 0,
-                                              &semaphoreBuffer_);
+  semaphore_ =
+      xSemaphoreCreateCountingStatic(MAX_PENDING_BEEPS, 0, &semaphoreBuffer_);
   if (semaphore_ == nullptr) {
     return false;
   }
@@ -27,10 +27,10 @@ bool BuzzerTask::init() {
 }
 
 void BuzzerTask::signal() {
-  if (semaphore_ == nullptr) {
-    return;
-  }
-  (void)xSemaphoreGive(semaphore_);
+  // if (semaphore_ == nullptr) {
+  //   return;
+  // }
+  // (void)xSemaphoreGive(semaphore_);
 }
 
 void BuzzerTask::taskEntry(void *_argument) {

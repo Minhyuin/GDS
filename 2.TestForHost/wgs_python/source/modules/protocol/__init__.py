@@ -1,6 +1,8 @@
 from .codec import (
     ping_frame,
     point_set_frame,
+    point2_set_frame,
+    point_pulse_width_set_frame,
     sequence_set_frame,
     sync_frame,
     timer_set_frame,
@@ -22,6 +24,8 @@ __all__ = [
     "parse_reply",
     "ping_frame",
     "point_set_frame",
+    "point2_set_frame",
+    "point_pulse_width_set_frame",
     "sequence_set_frame",
     "sync_frame",
     "timer_set_frame",

@@ -21,10 +21,11 @@ from PySide6.QtWidgets import (
 
 from ..client import WgsClient
 from ..protocol.constants import (
-    MAX_POINT_ACK_PULSE_US,
     MAX_SAMPLE_RATE_HZ,
     MAX_WAVEFORM_LENGTH_SA,
-    MIN_POINT_ACK_PULSE_US,
+    POINT_PULSE_WIDTH_DEFAULT_US,
+    POINT_PULSE_WIDTH_MAX_US,
+    POINT_PULSE_WIDTH_MIN_US,
     PERIOD_SAMPLE_COUNT,
 )
 from ..transport import list_serial_ports
@@ -54,6 +55,8 @@ class MainWindow(QMainWindow):
         left = QVBoxLayout()
         left.addWidget(self._build_connection_box())
         left.addWidget(self._build_point_box())
+        left.addWidget(self._build_point2_box())
+        left.addWidget(self._build_point_pulse_box())
         left.addWidget(self._build_timer_box())
         left.addWidget(self._build_sequence_box())
         left.addStretch(1)
@@ -109,14 +112,36 @@ class MainWindow(QMainWindow):
         layout = QFormLayout(box)
         self.point_channel = self._channel_combo()
         self.point_voltage = self._voltage_spin(1.65)
-        self.point_ack_pulse = self._ack_pulse_spin()
         self.point_send_button = QPushButton("Send Point")
         self.point_send_button.setEnabled(False)
         layout.addRow("Channel", self.point_channel)
         layout.addRow("Voltage", self.point_voltage)
-        layout.addRow("ACK Width", self.point_ack_pulse)
         layout.addRow(self.point_send_button)
         self.point_send_button.clicked.connect(self.send_point)
+        return box
+
+    def _build_point2_box(self):
+        box = QGroupBox("Point2 Set")
+        layout = QFormLayout(box)
+        self.point2_ch1_voltage = self._voltage_spin(1.65)
+        self.point2_ch2_voltage = self._voltage_spin(1.65)
+        self.point2_send_button = QPushButton("Send Point2")
+        self.point2_send_button.setEnabled(False)
+        layout.addRow("CH1 Voltage", self.point2_ch1_voltage)
+        layout.addRow("CH2 Voltage", self.point2_ch2_voltage)
+        layout.addRow(self.point2_send_button)
+        self.point2_send_button.clicked.connect(self.send_point2)
+        return box
+
+    def _build_point_pulse_box(self):
+        box = QGroupBox("Point Pulse")
+        layout = QFormLayout(box)
+        self.point_pulse_width = self._ack_pulse_spin()
+        self.point_pulse_send_button = QPushButton("Set Pulse Width")
+        self.point_pulse_send_button.setEnabled(False)
+        layout.addRow("Pulse Width", self.point_pulse_width)
+        layout.addRow(self.point_pulse_send_button)
+        self.point_pulse_send_button.clicked.connect(self.send_point_pulse_width)
         return box
 
     def _build_timer_box(self):
@@ -196,10 +221,10 @@ class MainWindow(QMainWindow):
 
     def _ack_pulse_spin(self):
         spin = QDoubleSpinBox()
-        spin.setRange(MIN_POINT_ACK_PULSE_US, MAX_POINT_ACK_PULSE_US)
+        spin.setRange(POINT_PULSE_WIDTH_MIN_US, POINT_PULSE_WIDTH_MAX_US)
         spin.setDecimals(1)
         spin.setSingleStep(1.0)
-        spin.setValue(5.0)
+        spin.setValue(POINT_PULSE_WIDTH_DEFAULT_US)
         spin.setSuffix(" us")
         return spin
 
@@ -241,6 +266,8 @@ class MainWindow(QMainWindow):
             self.ping_button,
             self.sync_button,
             self.point_send_button,
+            self.point2_send_button,
+            self.point_pulse_send_button,
             self.sequence_send_button,
         ]:
             button.setEnabled(connected)
@@ -254,10 +281,24 @@ class MainWindow(QMainWindow):
     def send_point(self):
         channel = self.point_channel.currentData()
         voltage = self.point_voltage.value()
-        ack_pulse_us = self.point_ack_pulse.value()
         self._run_command(
-            f"POINT_SET {channel} {voltage:.4f}V ACK={ack_pulse_us:.1f}us",
-            lambda: self.client.point_set(channel, voltage, ack_pulse_us),
+            f"POINT_SET {channel} {voltage:.4f}V",
+            lambda: self.client.point_set(channel, voltage),
+        )
+
+    def send_point2(self):
+        ch1_voltage = self.point2_ch1_voltage.value()
+        ch2_voltage = self.point2_ch2_voltage.value()
+        self._run_command(
+            f"POINT2_SET CH1 {ch1_voltage:.4f}V CH2 {ch2_voltage:.4f}V",
+            lambda: self.client.point2_set(ch1_voltage, ch2_voltage),
+        )
+
+    def send_point_pulse_width(self):
+        pulse_width = self.point_pulse_width.value()
+        self._run_command(
+            f"POINT_PULSE_WIDTH_SET {pulse_width:.1f}us",
+            lambda: self.client.point_pulse_width_set(pulse_width),
         )
 
     def send_sequence(self):

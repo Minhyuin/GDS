@@ -18,6 +18,8 @@ class FakeClient:
         self.is_open = True
         self.sync_calls = 0
         self.point_calls = []
+        self.point2_calls = []
+        self.point_pulse_width_calls = []
         self.sequence_calls = []
         self.last_tx = bytes.fromhex("A5 01 01 00 01")
         self.last_rx = bytes.fromhex("A5 02 02 00 01 00")
@@ -26,9 +28,19 @@ class FakeClient:
         self.sync_calls += 1
         return FakeReply()
 
-    def point_set(self, channel, voltage, ack_pulse_us=5.0):
-        self.point_calls.append((channel, voltage, ack_pulse_us))
-        self.last_tx = bytes.fromhex("A5 01 0A 00 10 01 00 00 C0 3F 00 00 48 42")
+    def point_set(self, channel, voltage):
+        self.point_calls.append((channel, voltage))
+        self.last_tx = bytes.fromhex("A5 01 06 00 10 01 00 00 C0 3F")
+        return FakeReply()
+
+    def point2_set(self, ch1_voltage, ch2_voltage):
+        self.point2_calls.append((ch1_voltage, ch2_voltage))
+        self.last_tx = bytes.fromhex("A5 01 09 00 11 00 00 C0 3F 00 00 20 40")
+        return FakeReply()
+
+    def point_pulse_width_set(self, pulse_width_us):
+        self.point_pulse_width_calls.append(pulse_width_us)
+        self.last_tx = bytes.fromhex("A5 01 05 00 50 00 00 48 42")
         return FakeReply()
 
     def sequence_set(self, channel, samples, frequency_hz):
@@ -84,26 +96,49 @@ def test_sync_button_is_available_when_connected_and_calls_client_sync():
     window.close()
 
 
-def test_point_ack_width_is_sent_to_client():
+def test_point_set_sends_voltage_only():
     app_instance()
     window = main_window.MainWindow()
     window.client = FakeClient()
     window._set_connected(True)
 
-    if not hasattr(window, "point_ack_pulse"):
-        raise AssertionError("MainWindow should expose a point_ack_pulse control")
-
     window.point_channel.setCurrentIndex(0)
     window.point_voltage.setValue(1.5)
-    window.point_ack_pulse.setValue(50.0)
     window.send_point()
 
-    if window.client.point_calls != [("CH1", 1.5, 50.0)]:
-        raise AssertionError(f"Expected POINT_SET ACK width call, got {window.client.point_calls!r}")
+    if window.client.point_calls != [("CH1", 1.5)]:
+        raise AssertionError(f"Expected POINT_SET voltage-only call, got {window.client.point_calls!r}")
 
     log_text = window.log.toPlainText()
-    if "POINT_SET CH1 1.5000V ACK=50.0us" not in log_text:
-        raise AssertionError("POINT_SET ACK width should be written to the GUI log")
+    if "POINT_SET CH1 1.5000V" not in log_text:
+        raise AssertionError("POINT_SET should be written to the GUI log")
+
+    window.close()
+
+
+def test_point2_and_pulse_width_controls_call_client():
+    app_instance()
+    window = main_window.MainWindow()
+    window.client = FakeClient()
+    window._set_connected(True)
+
+    window.point2_ch1_voltage.setValue(1.5)
+    window.point2_ch2_voltage.setValue(2.5)
+    window.send_point2()
+
+    window.point_pulse_width.setValue(50.0)
+    window.send_point_pulse_width()
+
+    if window.client.point2_calls != [(1.5, 2.5)]:
+        raise AssertionError(f"Expected POINT2_SET call, got {window.client.point2_calls!r}")
+    if window.client.point_pulse_width_calls != [50.0]:
+        raise AssertionError(f"Expected pulse width call, got {window.client.point_pulse_width_calls!r}")
+
+    log_text = window.log.toPlainText()
+    if "POINT2_SET CH1 1.5000V CH2 2.5000V" not in log_text:
+        raise AssertionError("POINT2_SET should be written to the GUI log")
+    if "POINT_PULSE_WIDTH_SET 50.0us" not in log_text:
+        raise AssertionError("Pulse width set should be written to the GUI log")
 
     window.close()
 
@@ -157,7 +192,8 @@ def test_send_sequence_uses_configured_length_and_frequency():
 def run_all():
     tests = [
         test_sync_button_is_available_when_connected_and_calls_client_sync,
-        test_point_ack_width_is_sent_to_client,
+        test_point_set_sends_voltage_only,
+        test_point2_and_pulse_width_controls_call_client,
         test_waveform_length_frequency_updates_readonly_sample_rate_and_rejects_over_limit,
         test_send_sequence_uses_configured_length_and_frequency,
     ]

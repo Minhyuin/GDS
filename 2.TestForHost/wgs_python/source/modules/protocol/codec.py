@@ -4,10 +4,10 @@ import struct
 from .constants import (
     CommandType,
     FrameType,
-    MAX_POINT_ACK_PULSE_US,
     MAX_SAMPLE_RATE_HZ,
     MAX_WAVEFORM_LENGTH_SA,
-    MIN_POINT_ACK_PULSE_US,
+    POINT_PULSE_WIDTH_MAX_US,
+    POINT_PULSE_WIDTH_MIN_US,
     PERIOD_SAMPLE_COUNT,
     normalize_channel,
 )
@@ -22,14 +22,24 @@ def sync_frame():
     return build_frame(FrameType.COMMAND, bytes([CommandType.SYNC]))
 
 
-def point_set_frame(channel, voltage, ack_pulse_us=5.0):
+def point_set_frame(channel, voltage):
     ch = normalize_channel(channel)
-    ack_pulse_us = float(ack_pulse_us)
-    if not math.isfinite(ack_pulse_us) or not MIN_POINT_ACK_PULSE_US <= ack_pulse_us <= MAX_POINT_ACK_PULSE_US:
+    payload = bytes([CommandType.POINT_SET, ch]) + struct.pack("<f", float(voltage))
+    return build_frame(FrameType.COMMAND, payload)
+
+
+def point2_set_frame(ch1_voltage, ch2_voltage):
+    payload = bytes([CommandType.POINT2_SET]) + struct.pack("<f", float(ch1_voltage)) + struct.pack("<f", float(ch2_voltage))
+    return build_frame(FrameType.COMMAND, payload)
+
+
+def point_pulse_width_set_frame(pulse_width_us):
+    pulse_width_us = float(pulse_width_us)
+    if not math.isfinite(pulse_width_us) or not POINT_PULSE_WIDTH_MIN_US <= pulse_width_us <= POINT_PULSE_WIDTH_MAX_US:
         raise ValueError(
-            f"POINT_SET ACK pulse width must be {MIN_POINT_ACK_PULSE_US:g}..{MAX_POINT_ACK_PULSE_US:g} us"
+            f"POINT_PULSE_WIDTH_SET pulse width must be {POINT_PULSE_WIDTH_MIN_US:g}..{POINT_PULSE_WIDTH_MAX_US:g} us"
         )
-    payload = bytes([CommandType.POINT_SET, ch]) + struct.pack("<f", float(voltage)) + struct.pack("<f", ack_pulse_us)
+    payload = bytes([CommandType.POINT_PULSE_WIDTH_SET]) + struct.pack("<f", pulse_width_us)
     return build_frame(FrameType.COMMAND, payload)
 
 

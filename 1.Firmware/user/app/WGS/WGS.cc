@@ -173,9 +173,8 @@ void WGSManager::handleFrame(const PROTOCOL::Frame_s &_frame) {
     return;
   }
 
-  APP::BUZZER::notifyProtocolCommandReceived();
-
   if (std::holds_alternative<PROTOCOL::PingCommand_s>(command)) {
+    APP::BUZZER::notifyProtocolCommandReceived();
     sendResult(PROTOCOL::Result_s::success());
     return;
   }

@@ -1,7 +1,7 @@
 from pathlib import Path
 
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 
 
 def read(path):
@@ -27,7 +27,7 @@ def test_buzzer_task_uses_pc0_and_blocks_on_counting_semaphore():
     assert_contains(buzzer_cpp, "HAL_GPIO_WritePin(Buzzer_GPIO_Port, Buzzer_Pin, GPIO_PIN_RESET)", "buzzer should return PC0 low")
 
 
-def test_wgs_signals_buzzer_after_valid_protocol_command_decode():
+def test_wgs_signals_buzzer_only_for_ping_commands():
     app_manager_hpp = read("user/app/AppManager.hpp")
     app_manager_cpp = read("user/app/AppManager.cpp")
     wgs_cc = read("user/app/WGS/WGS.cc")
@@ -35,13 +35,24 @@ def test_wgs_signals_buzzer_after_valid_protocol_command_decode():
     assert_contains(app_manager_hpp, "BuzzerTask", "AppManager should own the buzzer task")
     assert_contains(app_manager_cpp, "buzzer.init()", "AppManager should initialize buzzer before WGS use")
     assert_contains(wgs_cc, "Buzzer.hpp", "WGS should include buzzer signal API")
-    assert_contains(wgs_cc, "notifyProtocolCommandReceived()", "WGS should notify buzzer on valid commands")
+    assert_contains(wgs_cc, "notifyProtocolCommandReceived()", "WGS should notify buzzer on ping commands")
+
+    ping_branch = "if (std::holds_alternative<PROTOCOL::PingCommand_s>(command))"
+    buzzer_call = "APP::BUZZER::notifyProtocolCommandReceived();"
+    ping_index = wgs_cc.index(ping_branch)
+    buzzer_index = wgs_cc.index(buzzer_call)
+    ping_return_index = wgs_cc.index("return;", ping_index)
+
+    if buzzer_index < ping_index:
+        raise AssertionError("WGS should not notify the buzzer for every decoded command")
+    if buzzer_index > ping_return_index:
+        raise AssertionError("WGS should notify the buzzer inside the ping command branch")
 
 
 def run_all():
     tests = [
         test_buzzer_task_uses_pc0_and_blocks_on_counting_semaphore,
-        test_wgs_signals_buzzer_after_valid_protocol_command_decode,
+        test_wgs_signals_buzzer_only_for_ping_commands,
     ]
     for test in tests:
         test()

@@ -27,10 +27,10 @@ bool BuzzerTask::init() {
 }
 
 void BuzzerTask::signal() {
-  // if (semaphore_ == nullptr) {
-  //   return;
-  // }
-  // (void)xSemaphoreGive(semaphore_);
+  if (semaphore_ == nullptr) {
+    return;
+  }
+  (void)xSemaphoreGive(semaphore_);
 }
 
 void BuzzerTask::taskEntry(void *_argument) {

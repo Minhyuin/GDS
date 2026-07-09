@@ -122,10 +122,15 @@ payload[0] = command type
 
 ```cpp
 PING         = 0x00
+SYNC         = 0x01
 POINT_SET    = 0x10
+POINT2_SET   = 0x11
+POINT_SET_NO_ACK  = 0x12
+POINT2_SET_NO_ACK = 0x13
 SEQUENCE_SET = 0x20
 WAVEFORM_CONFIG = 0x30
 TIMER_SET    = 0x40
+POINT_PULSE_WIDTH_SET = 0x50
 ```
 
 ## PING
@@ -147,14 +152,13 @@ A5 01 01 00 00
 
 ## POINT_SET
 
-用途：使某个通道持续输出目标电压。固件会停止该通道 DAC DMA，直接写入 DAC value，并确保对应 timer 运行，以便外部触发配置能把 DHR 刷新到实际输出寄存器。该模式不会启动 DMA 扫描。
+用途：设置某个通道的单点目标电压，并等待外部触发输入 `EXT_PULSE_IN` 的上升沿到达后，再输出一次单点脉冲。固件会停止该通道 DAC DMA，直接写入 DAC value，并预配置对应 timer 的 one-pulse 输出；命令本身不会立即输出脉冲。
 
 ```text
 offset  size  field
 0       1     command type = 0x10
 1       1     channel
 2       4     voltage, float32 little-endian, unit = V
-6       4     ack_pulse_us, float32 little-endian, unit = us
 ```
 
 电压范围：
@@ -171,19 +175,81 @@ dac_code = round(voltage_v * 4095 / 3.3)
 
 若电压为 `NaN`、`Inf`、负数或超过 `3.3V`，固件会钳位到 `0.0..3.3V` 范围内，不返回范围错误。
 
-ACK 脉宽范围：
+成功时固件返回 `ACK / DONE / NONE`，含义是电压已经设置并且单点脉冲已经 armed。下一次 `EXT_PULSE_IN` 上升沿到达时，固件才会输出脉冲。外部脉冲到达时如果没有 pending 的单点命令，固件会忽略该触发。
+
+如果已有 pending 或 firing 的单点脉冲，新的 `POINT_SET` / `POINT2_SET` 仍会更新 DAC
+目标电压，但不会重新 armed 单点脉冲，并返回：
+
+```text
+ACK / BUSY / NONE
+```
+
+`POINT_PULSE_WIDTH_SET`、`SEQUENCE_SET`、`SYNC`、`WAVEFORM_CONFIG` 和 `TIMER_SET` 在
+pending 或 firing 期间仍直接返回 `ACK / BUSY / NONE`，不会修改对应配置。`PING` 不受影响。
+
+`POINT_SET_NO_ACK = 0x12` 使用同样的 payload 格式：
+
+```text
+offset  size  field
+0       1     command type = 0x12
+1       1     channel
+2       4     voltage, float32 little-endian, unit = V
+```
+
+有效的 `POINT_SET_NO_ACK` 会执行与 `POINT_SET` 相同的 DAC 更新和单点 armed 逻辑，但不会返回
+`ACK / DONE`、`ACK / BUSY` 或运行期 `NACK`。帧格式错误、长度错误或不支持的命令仍可能返回 NACK。
+
+示例：设置 CH1 = 1.5V，并等待下一次外部上升沿触发输出：
+
+```text
+A5 01 06 00 10 01 00 00 C0 3F
+```
+
+## POINT2_SET
+
+用途：在一帧内同时设置 CH1 和 CH2 的单点目标电压，并等待同一个 `EXT_PULSE_IN` 上升沿触发两路单点脉冲。两路 timer 在同一个 EXTI ISR 内先后启动，因此两路脉冲响应同一个外部触发，但不声明硬件零相位同步。
+
+```text
+offset  size  field
+0       1     command type = 0x11
+1       4     ch1 voltage, float32 little-endian, unit = V
+5       4     ch2 voltage, float32 little-endian, unit = V
+```
+
+成功时固件返回 `ACK / DONE / NONE`。如果已有 pending 或 firing 的单点脉冲，固件仍会更新
+CH1 / CH2 的 DAC 目标电压，但不会重新 armed 单点脉冲，并返回 `ACK / BUSY / NONE`。
+
+`POINT2_SET_NO_ACK = 0x13` 使用同样的双通道 payload 格式：
+
+```text
+offset  size  field
+0       1     command type = 0x13
+1       4     ch1 voltage, float32 little-endian, unit = V
+5       4     ch2 voltage, float32 little-endian, unit = V
+```
+
+有效的 `POINT2_SET_NO_ACK` 会执行与 `POINT2_SET` 相同的两路 DAC 更新和单点 armed 逻辑，但不会返回
+`ACK / DONE`、`ACK / BUSY` 或运行期 `NACK`。
+
+## POINT_PULSE_WIDTH_SET
+
+用途：设置单点模式在外部触发到达后输出的脉冲宽度。默认值为 `10 us`。
+
+```text
+offset  size  field
+0       1     command type = 0x50
+1       4     pulse_width_us, float32 little-endian, unit = us
+```
+
+脉宽范围：
 
 ```text
 1..1000000 us
 ```
 
-若 ACK 脉宽为 `NaN`、`Inf`、小于 `1us` 或大于 `1s`，固件返回 `NACK / OUT_OF_RANGE`。
+若脉宽为 `NaN`、`Inf`、小于 `1us` 或大于 `1s`，固件返回 `NACK / OUT_OF_RANGE`。如果已有 pending 或 firing 的单点脉冲，则返回 `ACK / BUSY / NONE`。
 
-示例：设置 CH1 = 1.5V，ACK 脉宽 5us：
-
-```text
-A5 01 0A 00 10 01 00 00 C0 3F 00 00 A0 40
-```
+当前外部脉冲信号约为 `5 kHz`，周期约为 `200 us`。这一版固件不限制单点脉宽和外部周期之间的关系，用户应避免设置超过外部周期或系统可接受范围的脉宽。固件这一版也不做输入毛刺过滤，`EXT_PULSE_IN` 的外部信号应保证干净的上升沿。
 
 ## SEQUENCE_SET
 
@@ -319,7 +385,7 @@ ACK, payload length = 2, status = DONE, detail = NONE
 
 ## Host 端建议
 
-上位机每发送一个命令帧后，应等待 ACK/NACK，再发送下一帧。推荐使用 `test/wgs_matlab` 中的 MATLAB client：
+除 `POINT_SET_NO_ACK` / `POINT2_SET_NO_ACK` 外，上位机每发送一个命令帧后，应等待 ACK/NACK，再发送下一帧。高频单点扫描可以使用 NO_ACK 单点命令，但主机端将无法逐帧确认 BUSY、DONE 或运行期错误。推荐使用 `test/wgs_matlab` 中的 MATLAB client：
 
 ```matlab
 client = wgs.connect("COM43");

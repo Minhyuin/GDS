@@ -1,6 +1,8 @@
 from ..protocol.codec import (
     ping_frame,
+    point_set_no_ack_frame,
     point_set_frame,
+    point2_set_no_ack_frame,
     point2_set_frame,
     point_pulse_width_set_frame,
     sequence_set_frame,
@@ -45,13 +47,19 @@ class WgsClient:
         return self.send_command(point_set_frame(channel, voltage))
 
     def point_set_no_reply(self, channel, voltage):
-        self.send_command_no_reply(point_set_frame(channel, voltage))
+        self.send_command_no_reply(point_set_no_ack_frame(channel, voltage))
+
+    def point_set_no_ack(self, channel, voltage):
+        self.point_set_no_reply(channel, voltage)
 
     def point2_set(self, ch1_voltage, ch2_voltage):
         return self.send_command(point2_set_frame(ch1_voltage, ch2_voltage))
 
     def point2_set_no_reply(self, ch1_voltage, ch2_voltage):
-        self.send_command_no_reply(point2_set_frame(ch1_voltage, ch2_voltage))
+        self.send_command_no_reply(point2_set_no_ack_frame(ch1_voltage, ch2_voltage))
+
+    def point2_set_no_ack(self, ch1_voltage, ch2_voltage):
+        self.point2_set_no_reply(ch1_voltage, ch2_voltage)
 
     def point_pulse_width_set(self, pulse_width_us):
         return self.send_command(point_pulse_width_set_frame(pulse_width_us))

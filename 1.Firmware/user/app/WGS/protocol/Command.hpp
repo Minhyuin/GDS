@@ -14,6 +14,8 @@ enum class CommandType_e : uint8_t {
   SYNC = 0x01,
   POINT_SET = 0x10,
   POINT2_SET = 0x11,
+  POINT_SET_NO_ACK = 0x12,
+  POINT2_SET_NO_ACK = 0x13,
   SEQUENCE_SET = 0x20,
   WAVEFORM_CONFIG = 0x30,
   TIMER_SET = 0x40,
@@ -48,11 +50,13 @@ using DacSample_s = APP::WGS::OUTPUT::DacSample_s;
 struct PointSetCommand_s {
   Channel_e channel{Channel_e::CH1};
   DacSample_s sample{};
+  bool replyEnabled{true};
 };
 
 struct Point2SetCommand_s {
   DacSample_s ch1Sample{};
   DacSample_s ch2Sample{};
+  bool replyEnabled{true};
 };
 
 struct PointPulseWidthSetCommand_s {

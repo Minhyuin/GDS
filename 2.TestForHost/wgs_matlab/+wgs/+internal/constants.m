@@ -6,10 +6,19 @@ function C = constants()
     C.FRAME_ACK = hex2dec("02");
     C.FRAME_NACK = hex2dec("03");
 
+    C.ACK_ACCEPTED = hex2dec("00");
+    C.ACK_DONE = hex2dec("01");
+    C.ACK_BUSY = hex2dec("02");
+    C.ACK_ERROR = hex2dec("80");
+
+    C.ERROR_NONE = hex2dec("00");
+
     C.CMD_PING = hex2dec("00");
     C.CMD_SYNC = hex2dec("01");
     C.CMD_POINT_SET = hex2dec("10");
     C.CMD_POINT2_SET = hex2dec("11");
+    C.CMD_POINT_SET_NO_ACK = hex2dec("12");
+    C.CMD_POINT2_SET_NO_ACK = hex2dec("13");
     C.CMD_SEQUENCE_SET = hex2dec("20");
     C.CMD_WAVEFORM_CONFIG = hex2dec("30");
     C.CMD_TIMER_SET = hex2dec("40");

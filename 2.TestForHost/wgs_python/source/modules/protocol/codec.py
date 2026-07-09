@@ -22,15 +22,31 @@ def sync_frame():
     return build_frame(FrameType.COMMAND, bytes([CommandType.SYNC]))
 
 
-def point_set_frame(channel, voltage):
+def _point_set_frame(command, channel, voltage):
     ch = normalize_channel(channel)
-    payload = bytes([CommandType.POINT_SET, ch]) + struct.pack("<f", float(voltage))
+    payload = bytes([command, ch]) + struct.pack("<f", float(voltage))
+    return build_frame(FrameType.COMMAND, payload)
+
+
+def point_set_frame(channel, voltage):
+    return _point_set_frame(CommandType.POINT_SET, channel, voltage)
+
+
+def point_set_no_ack_frame(channel, voltage):
+    return _point_set_frame(CommandType.POINT_SET_NO_ACK, channel, voltage)
+
+
+def _point2_set_frame(command, ch1_voltage, ch2_voltage):
+    payload = bytes([command]) + struct.pack("<f", float(ch1_voltage)) + struct.pack("<f", float(ch2_voltage))
     return build_frame(FrameType.COMMAND, payload)
 
 
 def point2_set_frame(ch1_voltage, ch2_voltage):
-    payload = bytes([CommandType.POINT2_SET]) + struct.pack("<f", float(ch1_voltage)) + struct.pack("<f", float(ch2_voltage))
-    return build_frame(FrameType.COMMAND, payload)
+    return _point2_set_frame(CommandType.POINT2_SET, ch1_voltage, ch2_voltage)
+
+
+def point2_set_no_ack_frame(ch1_voltage, ch2_voltage):
+    return _point2_set_frame(CommandType.POINT2_SET_NO_ACK, ch1_voltage, ch2_voltage)
 
 
 def point_pulse_width_set_frame(pulse_width_us):

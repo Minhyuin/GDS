@@ -69,6 +69,9 @@ public:
       return APP::WGS::PROTOCOL::Result_s::fail(
           APP::WGS::PROTOCOL::ErrorCode_e::INVALID_STATE);
     }
+    if (_ctx.player->isPointPulseBusy()) {
+      return APP::WGS::PROTOCOL::Result_s::busy();
+    }
 
     auto result = _ctx.player->sync(*_ctx.store);
     if (result.ok()) {
@@ -121,6 +124,9 @@ public:
       return APP::WGS::PROTOCOL::Result_s::fail(
           APP::WGS::PROTOCOL::ErrorCode_e::INVALID_STATE);
     }
+    if (_ctx.player->isPointPulseBusy()) {
+      return APP::WGS::PROTOCOL::Result_s::busy();
+    }
 
     return _ctx.player->setPointPulseWidth(_cmd.pulseWidthUs);
   }
@@ -132,6 +138,9 @@ public:
       _ctx.state = OutputState_e::FAULT;
       return APP::WGS::PROTOCOL::Result_s::fail(
           APP::WGS::PROTOCOL::ErrorCode_e::INVALID_STATE);
+    }
+    if (_ctx.player->isPointPulseBusy()) {
+      return APP::WGS::PROTOCOL::Result_s::busy();
     }
 
     if (_cmd.samples.empty()) {
@@ -160,6 +169,9 @@ public:
       return APP::WGS::PROTOCOL::Result_s::fail(
           APP::WGS::PROTOCOL::ErrorCode_e::INVALID_STATE);
     }
+    if (_ctx.player->isPointPulseBusy()) {
+      return APP::WGS::PROTOCOL::Result_s::busy();
+    }
 
     return _ctx.player->configureWaveform(
         toOutputChannel(_cmd.channel), _cmd.lengthSa, _cmd.frequencyHz,
@@ -173,6 +185,9 @@ public:
       _ctx.state = OutputState_e::FAULT;
       return APP::WGS::PROTOCOL::Result_s::fail(
           APP::WGS::PROTOCOL::ErrorCode_e::INVALID_STATE);
+    }
+    if (_ctx.player->isPointPulseBusy()) {
+      return APP::WGS::PROTOCOL::Result_s::busy();
     }
 
     return _ctx.player->setSampleRate(toOutputChannel(_cmd.channel),

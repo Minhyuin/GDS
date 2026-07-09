@@ -53,6 +53,7 @@ DAC 输出和 ACK 脉冲引脚如下：
 | CH1 ACK2 | `PD13 / TIM4_CH2` | 与 CH1 ACK1 同时输出 |
 | CH2 ACK1 | `PA2 / TIM5_CH3` | CH2 电压更新/单点命令 ACK 脉冲 |
 | CH2 ACK2 | `PA3 / TIM5_CH4` | 与 CH2 ACK1 同时输出 |
+| EXT_PULSE_IN 触发输入 | `PB0 / EXT_PULSE_IN` | 外部脉冲 |
 | Buzzer | `PC0` | 收到协议内命令后短鸣 |
 
 接线注意事项：

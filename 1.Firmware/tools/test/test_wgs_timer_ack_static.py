@@ -57,7 +57,8 @@ def test_point_ack_uses_hardware_one_pulse_mode():
 
 def test_dac_player_uses_ack_pwm_for_point_and_sequence_modes():
     player = read("user/app/WGS/output/DacWavePlayer.hpp")
-    assert_contains(player, "pulseOnce(_ackPulseUs)", "POINT_SET should emit host-width ACK pulse")
+    assert_contains(player, "prepareSinglePulse(_ackPulseUs)", "POINT_SET should prepare host-width point pulse")
+    assert_contains(player, "firePendingPointPulseFromIsr", "external pulse should fire prepared point pulse")
     assert_contains(player, "startContinuous", "SEQUENCE_SET should run ACK PWM continuously")
     assert_contains(player, "stopContinuous", "channel stop should stop ACK PWM")
 
@@ -83,10 +84,16 @@ def test_point_set_protocol_uses_voltage_only_and_exposes_point_modes():
 
     assert_contains(command, "POINT_SET_PAYLOAD_SIZE = 6", "POINT_SET payload should only include voltage")
     assert_contains(command, "POINT2_SET = 0x11", "POINT2_SET command id")
+    assert_contains(command, "POINT_SET_NO_ACK = 0x12", "POINT_SET_NO_ACK command id")
+    assert_contains(command, "POINT2_SET_NO_ACK = 0x13", "POINT2_SET_NO_ACK command id")
     assert_contains(command, "POINT2_SET_PAYLOAD_SIZE = 9", "POINT2_SET payload size")
     assert_contains(command, "POINT_PULSE_WIDTH_SET = 0x50", "point pulse width command id")
     assert_contains(command, "POINT_PULSE_WIDTH_DEFAULT_US = 10.0F", "default point pulse width")
     assert_contains(wgs_cc, "POINT2_SET_PAYLOAD_SIZE", "POINT2_SET decode path")
+    assert_contains(command, "replyEnabled{true}", "point commands should default to sending replies")
+    assert_contains(wgs_cc, "commandType != PROTOCOL::CommandType_e::POINT_SET_NO_ACK", "POINT_SET_NO_ACK should suppress replies")
+    assert_contains(wgs_cc, "commandType != PROTOCOL::CommandType_e::POINT2_SET_NO_ACK", "POINT2_SET_NO_ACK should suppress replies")
+    assert_contains(wgs_cc, "shouldSendResult(command)", "WGS should skip sendResult for NO_ACK point commands")
     assert_contains(wgs_cc, "POINT_PULSE_WIDTH_SET_PAYLOAD_SIZE", "point pulse width decode path")
     assert_contains(output_mode, "Point2SetCommand_s", "POINT2_SET dispatch")
     assert_contains(output_mode, "PointPulseWidthSetCommand_s", "point pulse width dispatch")

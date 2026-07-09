@@ -1,10 +1,12 @@
 #include "WGS.hpp"
 
 #include "Buzzer.hpp"
+#include "main.h"
 #include "usart.h"
 
 #include <cmath>
 #include <cstring>
+#include <type_traits>
 
 namespace APP::WGS {
 
@@ -73,6 +75,20 @@ bool readChannel(std::span<const std::byte> _bytes, size_t _offset,
   }
   return false;
 }
+
+bool shouldSendResult(const PROTOCOL::Command_v &_command) {
+  return std::visit(
+      [](const auto &_typedCommand) -> bool {
+        using Command = std::decay_t<decltype(_typedCommand)>;
+        if constexpr (std::is_same_v<Command, PROTOCOL::PointSetCommand_s> ||
+                      std::is_same_v<Command, PROTOCOL::Point2SetCommand_s>) {
+          return _typedCommand.replyEnabled;
+        }
+
+        return true;
+      },
+      _command);
+}
 } // namespace
 
 WGSManager::WGSManager()
@@ -114,6 +130,15 @@ void WGSManager::onTxCompleteFromIsr() { transport_.onTxComplete(); }
 void WGSManager::onDacDmaHalfCompleteFromIsr() {}
 
 void WGSManager::onDacDmaCompleteFromIsr() {}
+
+void WGSManager::onExternalPointTriggerFromIsr() {
+  output_.firePendingPointPulseFromIsr();
+}
+
+void WGSManager::onPointPulseTimerUpdateFromIsr(
+    OUTPUT::OutputChannel_e _channel) {
+  output_.completePointPulseFromIsr(_channel);
+}
 
 PROTOCOL::Result_s WGSManager::startTask() {
   taskHandle_ =
@@ -180,7 +205,9 @@ void WGSManager::handleFrame(const PROTOCOL::Frame_s &_frame) {
   }
 
   auto result = output_.dispatch(command);
-  sendResult(result);
+  if (shouldSendResult(command)) {
+    sendResult(result);
+  }
 }
 
 PROTOCOL::Result_s WGSManager::decodeCommand(const PROTOCOL::Frame_s &_frame,
@@ -204,7 +231,8 @@ PROTOCOL::Result_s WGSManager::decodeCommand(const PROTOCOL::Frame_s &_frame,
     }
     _command = PROTOCOL::SyncCommand_s{};
     return PROTOCOL::Result_s::success();
-  case PROTOCOL::CommandType_e::POINT_SET: {
+  case PROTOCOL::CommandType_e::POINT_SET:
+  case PROTOCOL::CommandType_e::POINT_SET_NO_ACK: {
     if (_frame.payload.size() != PROTOCOL::POINT_SET_PAYLOAD_SIZE) {
       return PROTOCOL::Result_s::fail(PROTOCOL::ErrorCode_e::BAD_LENGTH);
     }
@@ -218,10 +246,13 @@ PROTOCOL::Result_s WGSManager::decodeCommand(const PROTOCOL::Frame_s &_frame,
     _command = PROTOCOL::PointSetCommand_s{
         .channel = channel,
         .sample = PROTOCOL::DacSample_s{.value = voltageToDacCode(voltage)},
+        .replyEnabled =
+            commandType != PROTOCOL::CommandType_e::POINT_SET_NO_ACK,
     };
     return PROTOCOL::Result_s::success();
   }
-  case PROTOCOL::CommandType_e::POINT2_SET: {
+  case PROTOCOL::CommandType_e::POINT2_SET:
+  case PROTOCOL::CommandType_e::POINT2_SET_NO_ACK: {
     if (_frame.payload.size() != PROTOCOL::POINT2_SET_PAYLOAD_SIZE) {
       return PROTOCOL::Result_s::fail(PROTOCOL::ErrorCode_e::BAD_LENGTH);
     }
@@ -232,6 +263,8 @@ PROTOCOL::Result_s WGSManager::decodeCommand(const PROTOCOL::Frame_s &_frame,
     _command = PROTOCOL::Point2SetCommand_s{
         .ch1Sample = PROTOCOL::DacSample_s{.value = voltageToDacCode(ch1Voltage)},
         .ch2Sample = PROTOCOL::DacSample_s{.value = voltageToDacCode(ch2Voltage)},
+        .replyEnabled =
+            commandType != PROTOCOL::CommandType_e::POINT2_SET_NO_ACK,
     };
     return PROTOCOL::Result_s::success();
   }
@@ -336,6 +369,14 @@ PROTOCOL::Result_s WGSManager::decodeCommand(const PROTOCOL::Frame_s &_frame,
 }
 
 void WGSManager::sendResult(PROTOCOL::Result_s _result) {
+  if (_result.isBusy()) {
+    protocol_.sendAck(PROTOCOL::AckPayload_s{
+        .status = PROTOCOL::AckStatus_e::BUSY,
+        .detail = PROTOCOL::ErrorCode_e::NONE,
+    });
+    return;
+  }
+
   if (_result.ok()) {
     protocol_.sendAck(PROTOCOL::AckPayload_s{
         .status = PROTOCOL::AckStatus_e::DONE,
@@ -370,6 +411,32 @@ extern "C" void notifyWgsDacDmaHalfCompleteFromIsr() {
 extern "C" void notifyWgsDacDmaCompleteFromIsr() {
   if (APP::WGS::activeWgs != nullptr) {
     APP::WGS::activeWgs->onDacDmaCompleteFromIsr();
+  }
+}
+
+extern "C" void notifyWgsExternalPointTriggerFromIsr() {
+  if (APP::WGS::activeWgs != nullptr) {
+    APP::WGS::activeWgs->onExternalPointTriggerFromIsr();
+  }
+}
+
+extern "C" void notifyWgsTim4UpdateFromIsr() {
+  if (APP::WGS::activeWgs != nullptr) {
+    APP::WGS::activeWgs->onPointPulseTimerUpdateFromIsr(
+        APP::WGS::OUTPUT::OutputChannel_e::CH1);
+  }
+}
+
+extern "C" void notifyWgsTim5UpdateFromIsr() {
+  if (APP::WGS::activeWgs != nullptr) {
+    APP::WGS::activeWgs->onPointPulseTimerUpdateFromIsr(
+        APP::WGS::OUTPUT::OutputChannel_e::CH2);
+  }
+}
+
+extern "C" void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
+  if (GPIO_Pin == EXT_PULSE_IN_Pin) {
+    notifyWgsExternalPointTriggerFromIsr();
   }
 }
 

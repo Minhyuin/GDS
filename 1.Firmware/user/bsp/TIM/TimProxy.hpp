@@ -32,6 +32,7 @@ public:
   }
 
   static HAL_StatusTypeDef startContinuous() {
+    disableUpdateInterrupt();
     setAckPulseTicks(ackPulseTicksForPeriod(currentPeriodTicks()));
     resetCounter();
     enableAckPwmOutputs();
@@ -40,6 +41,7 @@ public:
   }
 
   static HAL_StatusTypeDef stop() {
+    disableUpdateInterrupt();
     if ((timer().Instance->CR1 & TIM_CR1_CEN) == 0U) {
       return stopAckPwm();
     }
@@ -82,9 +84,80 @@ public:
     return pwmStatus;
   }
 
+  static HAL_StatusTypeDef prepareSinglePulse(float _pulseWidthUs) {
+    auto status = stop();
+    if (status != HAL_OK) {
+      return status;
+    }
+
+    const auto savedConfig = captureConfig();
+    uint32_t pulseTicks = 0U;
+    status = configureSinglePulse(_pulseWidthUs, pulseTicks);
+    if (status != HAL_OK) {
+      restoreConfig(savedConfig);
+      return status;
+    }
+
+    singlePulseRestoreConfig_ = savedConfig;
+    singlePulsePrepared_ = true;
+    singlePulseFiring_ = false;
+
+    resetCounter();
+    enableOnePulseMode();
+    disableUpdateInterrupt();
+    stopAckPwm();
+
+    timer().Instance->EGR = TIM_EGR_UG;
+    clearUpdateFlag();
+    return HAL_OK;
+  }
+
+  static HAL_StatusTypeDef firePreparedSinglePulseFromIsr() {
+    if (!singlePulsePrepared_ || singlePulseFiring_) {
+      return HAL_ERROR;
+    }
+
+    clearUpdateFlag();
+    enableUpdateInterrupt();
+    timer().State = HAL_TIM_STATE_BUSY;
+    enableAckPwmOutputsTogether();
+    timer().Instance->CR1 |= TIM_CR1_CEN;
+    singlePulseFiring_ = true;
+    return HAL_OK;
+  }
+
+  static bool completePreparedSinglePulseFromIsr() {
+    if (!singlePulseFiring_) {
+      disableUpdateInterrupt();
+      clearUpdateFlag();
+      return false;
+    }
+
+    disableUpdateInterrupt();
+    clearUpdateFlag();
+    const auto pwmStatus = stopAckPwm();
+    restoreConfig(singlePulseRestoreConfig_);
+    singlePulsePrepared_ = false;
+    singlePulseFiring_ = false;
+    timer().State = HAL_TIM_STATE_READY;
+    return pwmStatus == HAL_OK;
+  }
+
+  static void cancelPreparedSinglePulse() {
+    disableUpdateInterrupt();
+    clearUpdateFlag();
+    stopAckPwm();
+    if (singlePulsePrepared_ && !singlePulseFiring_) {
+      restoreConfig(singlePulseRestoreConfig_);
+    }
+    singlePulsePrepared_ = false;
+    singlePulseFiring_ = false;
+  }
+
   static void resetCounter() { __HAL_TIM_SET_COUNTER(&timer(), 0U); }
 
   static void startCounterNow() {
+    disableUpdateInterrupt();
     timer().State = HAL_TIM_STATE_BUSY;
     setAckPulseTicks(ackPulseTicksForPeriod(currentPeriodTicks()));
     enableAckPwmOutputs();
@@ -93,6 +166,7 @@ public:
   }
 
   static HAL_StatusTypeDef setUpdateFrequencyHz(float _frequencyHz) {
+    disableUpdateInterrupt();
     if (_frequencyHz <= 0.0F) {
       return HAL_ERROR;
     }
@@ -172,6 +246,7 @@ private:
 
   struct TimerConfig_s {
     uint32_t control1{0U};
+    uint32_t interruptEnable{0U};
     uint32_t prescaler{0U};
     uint32_t autoReload{0U};
     uint32_t compare1{0U};
@@ -179,9 +254,14 @@ private:
     uint32_t counter{0U};
   };
 
+  static inline TimerConfig_s singlePulseRestoreConfig_{};
+  static inline bool singlePulsePrepared_{false};
+  static inline bool singlePulseFiring_{false};
+
   static TimerConfig_s captureConfig() {
     return TimerConfig_s{
         .control1 = timer().Instance->CR1,
+        .interruptEnable = timer().Instance->DIER,
         .prescaler = timer().Instance->PSC,
         .autoReload = timer().Instance->ARR,
         .compare1 = compareValue(HandleProvider::ACK_CHANNEL_1),
@@ -198,6 +278,7 @@ private:
     __HAL_TIM_SET_COUNTER(&timer(), _config.counter);
     timer().Instance->EGR = TIM_EGR_UG;
     __HAL_TIM_CLEAR_FLAG(&timer(), TIM_FLAG_UPDATE);
+    timer().Instance->DIER = _config.interruptEnable;
     timer().Instance->CR1 = _config.control1;
   }
 
@@ -248,6 +329,18 @@ private:
   }
 
   static void enableOnePulseMode() { timer().Instance->CR1 |= TIM_CR1_OPM; }
+
+  static void enableUpdateInterrupt() {
+    timer().Instance->DIER |= TIM_DIER_UIE;
+  }
+
+  static void disableUpdateInterrupt() {
+    timer().Instance->DIER &= ~TIM_DIER_UIE;
+  }
+
+  static void clearUpdateFlag() {
+    __HAL_TIM_CLEAR_FLAG(&timer(), TIM_FLAG_UPDATE);
+  }
 
   static void startSinglePulseDirect() {
     const auto irqState = __get_PRIMASK();

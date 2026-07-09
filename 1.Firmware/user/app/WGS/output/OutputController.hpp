@@ -41,6 +41,18 @@ public:
         _command);
   }
 
+  void firePendingPointPulseFromIsr() {
+    if (context_.player != nullptr) {
+      context_.player->firePendingPointPulseFromIsr();
+    }
+  }
+
+  void completePointPulseFromIsr(OutputChannel_e _channel) {
+    if (context_.player != nullptr) {
+      context_.player->completePointPulseFromIsr(_channel);
+    }
+  }
+
   OutputState_e state() const { return context_.state; }
 
 private:

@@ -17,18 +17,16 @@ fprintf("WGS UART demo on %s @ %d baud\n", ...
 reply = client.ping();
 wgs.printReply("PING", reply);
 
-% reply = client.pointSet(1, 1.65);
-% wgs.printReply("POINT_SET CH1 center", reply);
-
-% reply = client.pointSet(2, 1.65);
-% wgs.printReply("POINT_SET CH2 center", reply);
+% reply = client.point2Set(1.65, 1.65);
+% wgs.printReply("POINT2_SET center", reply);
 
 % pause(0.05);
-% reply = client.pointSet(1, 3.3);
-% wgs.printReply("POINT_SET CH1 high", reply);
+% reply = client.point2Set(3.3, 3.3);
+% wgs.printReply("POINT2_SET high", reply);
 
-% reply = client.pointSet(2, 3.3);
-% wgs.printReply("POINT_SET CH2 high", reply);
+% pause(0.05);
+% reply = client.point2Set(1.65, 1.65);
+% wgs.printReply("POINT2_SET center", reply);
 
 sampleCount = 10;
 waveformFrequencyHz = 1;

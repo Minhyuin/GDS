@@ -13,7 +13,7 @@ wgs_matlab/
     printReply.m          ACK/NACK 摘要打印工具
     +internal/            帧协议辅助函数
   wgs_uart_demo.m         端到端硬件演示
-  wgs_point_sine_demo.m   POINT_SET for 循环正弦演示
+  wgs_point_sine_demo.m   POINT2_SET for 循环正弦演示
   test_wgs_protocol.m     无需硬件的帧构造测试
 ```
 
@@ -130,7 +130,7 @@ SafeRts                 打开端口后的 RTS 状态，默认 false
 | `wgs.Client` | `client = wgs.Client(port, name, value, ...)` | `wgs.Client` | 类构造函数。通常优先使用 `wgs.connect()`。 |
 | `client.close` | `client.close()` | 无 | 关闭串口对象，并把 DTR/RTS 置为安全状态。建议配合 `onCleanup` 使用。 |
 | `delete` | `delete(client)` | 无 | MATLAB 删除对象时会自动调用 `close()`。 |
-| `client.flushInput` | `client.flushInput()` | 无 | 清空串口输入缓冲。使用 `pointSetNoReply()` 后，回到普通带应答命令前应调用。 |
+| `client.flushInput` | `client.flushInput()` | 无 | 清空串口输入缓冲。一般用于手动调试或丢弃旧数据。 |
 
 推荐写法：
 
@@ -157,9 +157,10 @@ reply.detailName   detail 文本，例如 NONE / INVALID_STATE
 | `client.ping` | `reply = client.ping()` | 无 | `reply` | 通信自检命令，不改变 DAC 输出。 |
 | `client.sync` | `reply = client.sync()` | 无 | `reply` | 同步 CH1/CH2 序列相位。仅当 CH1 和 CH2 都已处于序列播放状态时有效；否则固件返回 `NACK / INVALID_STATE`。 |
 | `client.pointSet` | `reply = client.pointSet(channel, voltage)` | `channel`, `voltage` | `reply` | 单点模式。停止对应通道 DMA，使该通道保持目标电压。 |
-| `client.pointSetNoReply` | `client.pointSetNoReply(channel, voltage)` | `channel`, `voltage` | 无 | 只发送命令，不等待 ACK/NACK。适合低速逐点扫描；后续使用带应答命令前调用 `flushInput()`。 |
+| `client.pointSetNoReply` / `client.pointSetNoAck` | `client.pointSetNoReply(channel, voltage)` | `channel`, `voltage` | 无 | 发送 `POINT_SET_NO_ACK = 0x12`。固件执行同样的单点逻辑，但有效命令不返回 ACK/BUSY/NACK。 |
 | `client.point2Set` | `reply = client.point2Set(ch1Voltage, ch2Voltage)` | `ch1Voltage`, `ch2Voltage` | `reply` | 同一帧同时输出 CH1 / CH2 的目标电压。 |
-| `client.point2SetNoReply` | `client.point2SetNoReply(ch1Voltage, ch2Voltage)` | `ch1Voltage`, `ch2Voltage` | 无 | 与 `point2Set()` 帧格式相同，但不会检查固件是否接受该命令。 |
+| `client.point2SetNoReply` / `client.point2SetNoAck` | `client.point2SetNoReply(ch1Voltage, ch2Voltage)` | `ch1Voltage`, `ch2Voltage` | 无 | 发送 `POINT2_SET_NO_ACK = 0x13`。适合高频双通道单点扫描，但不会逐帧确认固件状态。 |
+| `client.point2SetNoReplyBatch` / `client.point2SetNoAckBatch` | `stats = client.point2SetNoReplyBatch(ch1Voltages, ch2Voltages, name, value, ...)` | `ch1Voltages`, `ch2Voltages` | `stats` | 批量预构建连续 `POINT2_SET_NO_ACK` 帧，并按批次写入串口，避免 MATLAB 每点一次 `write()` 的约 1 kHz 调用瓶颈。 |
 | `client.pointPulseWidthSet` | `reply = client.pointPulseWidthSet(pulseWidthUs)` | `pulseWidthUs` | `reply` | 单点模式脉宽独立设置，允许范围为 `1..1000000`，默认值为 `10 us`。 |
 | `client.waveformConfig` | `reply = client.waveformConfig(channel, lengthSa, frequencyHz)` | `channel`, `lengthSa`, `frequencyHz` | `reply` | 配置通道波形长度和波形频率。`lengthSa` 必须为 `1..1000` 的整数，且 `lengthSa * frequencyHz <= 100000 Sa/s`。 |
 | `client.sequenceSet` | `reply = client.sequenceSet(channel, samples, frequencyHz)` | `channel`, `samples`, `frequencyHz` | `reply` | 推荐的序列发送入口。客户端会先调用 `waveformConfig(channel, numel(samples), frequencyHz)`，成功后再发送 `samples`。 |
@@ -201,7 +202,21 @@ sampleRateHz = numel(samples) * frequencyHz
 - 单点脉宽独立设置：调用 `pointPulseWidthSet()`。
 - 周期波形：优先调用 `sequenceSet(channel, samples, frequencyHz)`，让客户端先配置长度/频率再发送序列。
 - 双通道同相启动：先分别对 CH1、CH2 调用 `sequenceSet()`，确认都返回 ACK 后，再调用 `sync()`。
+- 高速单点扫描：使用 `pointSetNoReply()` / `point2SetNoReply()` 发送真正的 NO_ACK 单点命令，避免固件 ACK 流量积压。
+- 高频双通道逐点扫描：优先使用 `point2SetNoReplyBatch()`。它先把点列编码成连续帧，再按批次 `write()`，可选 `"PointRateHz"`、`"BatchPointCount"` 和 `"ProgressFcn"`。
 - 高速或长序列发送时，不要并发操作同一个串口；每条带应答命令应等待返回后再发送下一条。
+
+批量单点发送示例：
+
+```matlab
+stats = client.point2SetNoReplyBatch( ...
+    xVoltages, yVoltages, ...
+    "PointRateHz", 5000, ...
+    "BatchPointCount", 500, ...
+    "ProgressFcn", @(sent, total) fprintf("%d/%d\n", sent, total));
+
+fprintf("actual %.1f cmds/s\n", stats.actualRateHz);
+```
 
 ## DTR/RTS 注意事项
 
@@ -247,8 +262,14 @@ SYNC:
 POINT_SET:
   payload = 10 channel float32_le(voltage)
 
+POINT_SET_NO_ACK:
+  payload = 12 channel float32_le(voltage)
+
 POINT2_SET:
   payload = 11 float32_le(ch1_voltage) float32_le(ch2_voltage)
+
+POINT2_SET_NO_ACK:
+  payload = 13 float32_le(ch1_voltage) float32_le(ch2_voltage)
 
 POINT_PULSE_WIDTH_SET:
   payload = 50 float32_le(pulse_width_us)
@@ -299,6 +320,6 @@ wgs_uart_demo
 wgs_point_sine_demo
 ```
 
-这个脚本逐点发送 `POINT_SET` 控制 CH2，适合验证单点保持模式和串口应答链路。它不是高频波形方案；高频或稳定周期波形应使用 `sequenceSet()`。
+这个脚本逐点发送 `POINT2_SET_NO_ACK`，在目标通道输出正弦电压，同时让另一通道保持中心电压，适合验证高频单点发送路径。它不是稳定周期波形方案；稳定周期波形应使用 `sequenceSet()`。
 
-`wgs_point_sine_demo` 使用 `client.pointSetNoReply()` 提高逐点发送速度。这个接口只发送命令帧，不等待 ACK/NACK；固件仍会回 ACK，因此脚本在回到普通带应答命令前会调用 `client.flushInput()` 清理积压回复。
+`wgs_point_sine_demo` 使用 `client.point2SetNoReply()` 提高逐点发送速度。这个接口发送 `POINT2_SET_NO_ACK` 命令帧；有效命令不会产生固件 ACK，因此回到普通带应答命令前通常不需要清理积压回复。

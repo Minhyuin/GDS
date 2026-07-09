@@ -8,7 +8,9 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 from source.modules.protocol.codec import (  # noqa: E402
     ping_frame,
+    point_set_no_ack_frame,
     point_set_frame,
+    point2_set_no_ack_frame,
     point2_set_frame,
     point_pulse_width_set_frame,
     sequence_set_frame,
@@ -38,9 +40,19 @@ def test_point_set_ch1_1v5_frame():
     assert_equal(point_set_frame("CH1", 1.5), expected, "POINT_SET CH1 1.5V frame")
 
 
+def test_point_set_no_ack_ch1_1v5_frame():
+    expected = bytes.fromhex("A5 01 06 00 12 01") + struct.pack("<f", 1.5)
+    assert_equal(point_set_no_ack_frame("CH1", 1.5), expected, "POINT_SET_NO_ACK CH1 1.5V frame")
+
+
 def test_point2_set_dual_voltage_frame():
     expected = bytes.fromhex("A5 01 09 00 11") + struct.pack("<f", 1.5) + struct.pack("<f", 2.5)
     assert_equal(point2_set_frame(1.5, 2.5), expected, "POINT2_SET CH1/CH2 voltage frame")
+
+
+def test_point2_set_no_ack_dual_voltage_frame():
+    expected = bytes.fromhex("A5 01 09 00 13") + struct.pack("<f", 1.5) + struct.pack("<f", 2.5)
+    assert_equal(point2_set_no_ack_frame(1.5, 2.5), expected, "POINT2_SET_NO_ACK CH1/CH2 voltage frame")
 
 
 def test_point_pulse_width_set_50us_frame():
@@ -76,7 +88,9 @@ def run_all():
         test_ping_frame,
         test_sync_frame,
         test_point_set_ch1_1v5_frame,
+        test_point_set_no_ack_ch1_1v5_frame,
         test_point2_set_dual_voltage_frame,
+        test_point2_set_no_ack_dual_voltage_frame,
         test_point_pulse_width_set_50us_frame,
         test_timer_set_ch2_100khz_frame,
         test_waveform_config_ch2_256_points_12v5hz_frame,

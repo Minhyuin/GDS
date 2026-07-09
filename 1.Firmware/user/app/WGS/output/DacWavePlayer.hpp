@@ -6,6 +6,7 @@
 #include "WaveformStore.hpp"
 
 #include <cmath>
+#include <cstdint>
 #include <span>
 
 namespace APP::WGS::OUTPUT {
@@ -33,6 +34,7 @@ public:
     DacHardware::stopDma(DAC_CHANNEL_2);
     DMAch1Hardware::stopContinuous();
     DMAch2Hardware::stopContinuous();
+    clearPointPulseState();
 
     if (DacHardware::setDacValue(DAC_CHANNEL_1, 0U) != HAL_OK) {
       return fail();
@@ -58,6 +60,7 @@ public:
     DacHardware::stopDma(DAC_CHANNEL_2);
     DMAch1Hardware::stopContinuous();
     DMAch2Hardware::stopContinuous();
+    clearPointPulseState();
     sequencePlayingCh1_ = false;
     sequencePlayingCh2_ = false;
     state_ = PlayerState_e::STOPPED;
@@ -65,6 +68,10 @@ public:
 
   APP::WGS::PROTOCOL::Result_s reloadChannel(OutputChannel_e _channel,
                                              WaveformStore &_store) {
+    if (isPointPulseBusy()) {
+      return APP::WGS::PROTOCOL::Result_s::busy();
+    }
+
     if (stopChannel(_channel) != HAL_OK) {
       return fail();
     }
@@ -83,6 +90,10 @@ public:
                                                  size_t _lengthSa,
                                                  float _frequencyHz,
                                                  WaveformStore &_store) {
+    if (isPointPulseBusy()) {
+      return APP::WGS::PROTOCOL::Result_s::busy();
+    }
+
     if (!WaveformStore::isValidLength(_lengthSa)) {
       return APP::WGS::PROTOCOL::Result_s::fail(
           APP::WGS::PROTOCOL::ErrorCode_e::BAD_LENGTH);
@@ -106,6 +117,10 @@ public:
   }
 
   APP::WGS::PROTOCOL::Result_s sync(WaveformStore &_store) {
+    if (isPointPulseBusy()) {
+      return APP::WGS::PROTOCOL::Result_s::busy();
+    }
+
     if (!canSync()) {
       return APP::WGS::PROTOCOL::Result_s::fail(
           APP::WGS::PROTOCOL::ErrorCode_e::INVALID_STATE);
@@ -144,6 +159,8 @@ public:
   APP::WGS::PROTOCOL::Result_s holdChannel(OutputChannel_e _channel,
                                            uint16_t _sample,
                                            float _ackPulseUs) {
+    const bool wasBusy = isPointPulseBusy();
+
     if (DacHardware::stopDma(dacChannel(_channel)) != HAL_OK) {
       return fail();
     }
@@ -154,8 +171,15 @@ public:
     if (DacHardware::startDac(dacChannel(_channel)) != HAL_OK) {
       return fail();
     }
-    if (pulseTimer(_channel, _ackPulseUs) != HAL_OK) {
+    if (wasBusy) {
+      return APP::WGS::PROTOCOL::Result_s::busy();
+    }
+    if (preparePointPulse(_channel, _ackPulseUs) != HAL_OK) {
       return fail();
+    }
+    if (!armPointPulse(pointPulseMask(_channel))) {
+      cancelPointPulse(pointPulseMask(_channel));
+      return APP::WGS::PROTOCOL::Result_s::busy();
     }
 
     state_ = PlayerState_e::READY;
@@ -165,6 +189,8 @@ public:
   APP::WGS::PROTOCOL::Result_s holdChannels(uint16_t _ch1Sample,
                                             uint16_t _ch2Sample,
                                             float _ackPulseUs) {
+    const bool wasBusy = isPointPulseBusy();
+
     if (DacHardware::stopDma(DAC_CHANNEL_1) != HAL_OK) {
       return fail();
     }
@@ -186,20 +212,33 @@ public:
       return fail();
     }
 
-    if (pulseTimer(OutputChannel_e::CH1, _ackPulseUs) != HAL_OK) {
-      return fail();
-    }
-    if (pulseTimer(OutputChannel_e::CH2, _ackPulseUs) != HAL_OK) {
-      return fail();
-    }
-
     sequencePlayingCh1_ = false;
     sequencePlayingCh2_ = false;
+    if (wasBusy) {
+      return APP::WGS::PROTOCOL::Result_s::busy();
+    }
+
+    if (preparePointPulse(OutputChannel_e::CH1, _ackPulseUs) != HAL_OK) {
+      return fail();
+    }
+    if (preparePointPulse(OutputChannel_e::CH2, _ackPulseUs) != HAL_OK) {
+      cancelPointPulse(POINT_PULSE_CH1);
+      return fail();
+    }
+    if (!armPointPulse(POINT_PULSE_BOTH)) {
+      cancelPointPulse(POINT_PULSE_BOTH);
+      return APP::WGS::PROTOCOL::Result_s::busy();
+    }
+
     state_ = PlayerState_e::READY;
     return APP::WGS::PROTOCOL::Result_s::success();
   }
 
   APP::WGS::PROTOCOL::Result_s setPointPulseWidth(float _pulseWidthUs) {
+    if (isPointPulseBusy()) {
+      return APP::WGS::PROTOCOL::Result_s::busy();
+    }
+
     if (!std::isfinite(_pulseWidthUs) ||
         _pulseWidthUs < APP::WGS::PROTOCOL::POINT_PULSE_WIDTH_MIN_US ||
         _pulseWidthUs > APP::WGS::PROTOCOL::POINT_PULSE_WIDTH_MAX_US) {
@@ -215,6 +254,10 @@ public:
 
   APP::WGS::PROTOCOL::Result_s setSampleRate(OutputChannel_e _channel,
                                              float _sampleRateHz) {
+    if (isPointPulseBusy()) {
+      return APP::WGS::PROTOCOL::Result_s::busy();
+    }
+
     if (_sampleRateHz < MIN_SAMPLE_RATE_HZ ||
         _sampleRateHz > MAX_SAMPLE_RATE_HZ) {
       return APP::WGS::PROTOCOL::Result_s::fail(
@@ -235,9 +278,60 @@ public:
   PlayerState_e state() const { return state_; }
   bool canSync() const { return sequencePlayingCh1_ && sequencePlayingCh2_; }
 
+  bool isPointPulseBusy() const {
+    return (pendingPointPulseMask_ | firingPointPulseMask_) != 0U;
+  }
+
+  void firePendingPointPulseFromIsr() {
+    uint8_t mask = POINT_PULSE_NONE;
+
+    const auto irqState = __get_PRIMASK();
+    __disable_irq();
+    if (pendingPointPulseMask_ != POINT_PULSE_NONE &&
+        firingPointPulseMask_ == POINT_PULSE_NONE) {
+      mask = pendingPointPulseMask_;
+      pendingPointPulseMask_ = POINT_PULSE_NONE;
+      firingPointPulseMask_ = mask;
+    }
+    if (irqState == 0U) {
+      __enable_irq();
+    }
+
+    if ((mask & POINT_PULSE_CH1) != 0U &&
+        DMAch1Hardware::firePreparedSinglePulseFromIsr() != HAL_OK) {
+      clearFiringPointPulseMask(POINT_PULSE_CH1);
+    }
+    if ((mask & POINT_PULSE_CH2) != 0U &&
+        DMAch2Hardware::firePreparedSinglePulseFromIsr() != HAL_OK) {
+      clearFiringPointPulseMask(POINT_PULSE_CH2);
+    }
+  }
+
+  void completePointPulseFromIsr(OutputChannel_e _channel) {
+    const uint8_t mask = pointPulseMask(_channel);
+    const bool completed =
+        _channel == OutputChannel_e::CH1
+            ? DMAch1Hardware::completePreparedSinglePulseFromIsr()
+            : DMAch2Hardware::completePreparedSinglePulseFromIsr();
+    if (completed || (firingPointPulseMask_ & mask) != 0U) {
+      clearFiringPointPulseMask(mask);
+    }
+  }
+
 private:
+  static constexpr uint8_t POINT_PULSE_NONE = 0x00U;
+  static constexpr uint8_t POINT_PULSE_CH1 = 0x01U;
+  static constexpr uint8_t POINT_PULSE_CH2 = 0x02U;
+  static constexpr uint8_t POINT_PULSE_BOTH =
+      POINT_PULSE_CH1 | POINT_PULSE_CH2;
+
   static uint32_t dacChannel(OutputChannel_e _channel) {
     return _channel == OutputChannel_e::CH1 ? DAC_CHANNEL_1 : DAC_CHANNEL_2;
+  }
+
+  static uint8_t pointPulseMask(OutputChannel_e _channel) {
+    return _channel == OutputChannel_e::CH1 ? POINT_PULSE_CH1
+                                            : POINT_PULSE_CH2;
   }
 
   static HAL_StatusTypeDef startTimer(OutputChannel_e _channel) {
@@ -250,11 +344,20 @@ private:
                                             : DMAch2Hardware::stopContinuous();
   }
 
-  static HAL_StatusTypeDef pulseTimer(OutputChannel_e _channel,
-                                      float _ackPulseUs) {
+  static HAL_StatusTypeDef preparePointPulse(OutputChannel_e _channel,
+                                             float _ackPulseUs) {
     return _channel == OutputChannel_e::CH1
-               ? DMAch1Hardware::pulseOnce(_ackPulseUs)
-               : DMAch2Hardware::pulseOnce(_ackPulseUs);
+               ? DMAch1Hardware::prepareSinglePulse(_ackPulseUs)
+               : DMAch2Hardware::prepareSinglePulse(_ackPulseUs);
+  }
+
+  static void cancelPointPulse(uint8_t _mask) {
+    if ((_mask & POINT_PULSE_CH1) != 0U) {
+      DMAch1Hardware::cancelPreparedSinglePulse();
+    }
+    if ((_mask & POINT_PULSE_CH2) != 0U) {
+      DMAch2Hardware::cancelPreparedSinglePulse();
+    }
   }
 
   HAL_StatusTypeDef startChannel(OutputChannel_e _channel,
@@ -309,6 +412,38 @@ private:
     }
   }
 
+  bool armPointPulse(uint8_t _mask) {
+    const auto irqState = __get_PRIMASK();
+    __disable_irq();
+    const bool available = !isPointPulseBusy();
+    if (available) {
+      pendingPointPulseMask_ = _mask;
+    }
+    if (irqState == 0U) {
+      __enable_irq();
+    }
+    return available;
+  }
+
+  void clearFiringPointPulseMask(uint8_t _mask) {
+    const auto irqState = __get_PRIMASK();
+    __disable_irq();
+    firingPointPulseMask_ &= static_cast<uint8_t>(~_mask);
+    if (firingPointPulseMask_ == POINT_PULSE_NONE &&
+        pendingPointPulseMask_ == POINT_PULSE_NONE) {
+      state_ = PlayerState_e::READY;
+    }
+    if (irqState == 0U) {
+      __enable_irq();
+    }
+  }
+
+  void clearPointPulseState() {
+    cancelPointPulse(POINT_PULSE_BOTH);
+    pendingPointPulseMask_ = POINT_PULSE_NONE;
+    firingPointPulseMask_ = POINT_PULSE_NONE;
+  }
+
   APP::WGS::PROTOCOL::Result_s fail() {
     state_ = PlayerState_e::FAULT;
     return APP::WGS::PROTOCOL::Result_s::fail(
@@ -319,6 +454,8 @@ private:
   bool sequencePlayingCh1_{false};
   bool sequencePlayingCh2_{false};
   float pointPulseWidthUs_{APP::WGS::PROTOCOL::POINT_PULSE_WIDTH_DEFAULT_US};
+  volatile uint8_t pendingPointPulseMask_{POINT_PULSE_NONE};
+  volatile uint8_t firingPointPulseMask_{POINT_PULSE_NONE};
 };
 
 } // namespace APP::WGS::OUTPUT

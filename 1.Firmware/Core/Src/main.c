@@ -55,6 +55,8 @@
 void SystemClock_Config(void);
 void MX_FREERTOS_Init(void);
 /* USER CODE BEGIN PFP */
+void notifyWgsTim4UpdateFromIsr(void);
+void notifyWgsTim5UpdateFromIsr(void);
 
 /* USER CODE END PFP */
 
@@ -161,6 +163,15 @@ void SystemClock_Config(void)
 }
 
 /* USER CODE BEGIN 4 */
+void vApplicationStackOverflowHook(TaskHandle_t xTask, char *pcTaskName)
+{
+  (void)xTask;
+  (void)pcTaskName;
+  taskDISABLE_INTERRUPTS();
+  for (;;)
+  {
+  }
+}
 
 /* USER CODE END 4 */
 
@@ -182,6 +193,14 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
     HAL_IncTick();
   }
   /* USER CODE BEGIN Callback 1 */
+  if (htim->Instance == TIM4)
+  {
+    notifyWgsTim4UpdateFromIsr();
+  }
+  else if (htim->Instance == TIM5)
+  {
+    notifyWgsTim5UpdateFromIsr();
+  }
 
   /* USER CODE END Callback 1 */
 }

@@ -59,7 +59,11 @@ classdef Client < handle
         end
 
         function pointSetNoReply(obj, channel, voltage)
-            obj.sendCommandNoReply(obj.buildPointSetPayload(channel, voltage));
+            obj.sendCommandNoReply(obj.buildPointSetNoAckPayload(channel, voltage));
+        end
+
+        function pointSetNoAck(obj, channel, voltage)
+            obj.pointSetNoReply(channel, voltage);
         end
 
         function reply = point2Set(obj, ch1Voltage, ch2Voltage)
@@ -67,7 +71,22 @@ classdef Client < handle
         end
 
         function point2SetNoReply(obj, ch1Voltage, ch2Voltage)
-            obj.sendCommandNoReply(obj.buildPoint2SetPayload(ch1Voltage, ch2Voltage));
+            obj.sendCommandNoReply(obj.buildPoint2SetNoAckPayload(ch1Voltage, ch2Voltage));
+        end
+
+        function point2SetNoAck(obj, ch1Voltage, ch2Voltage)
+            obj.point2SetNoReply(ch1Voltage, ch2Voltage);
+        end
+
+        function stats = point2SetNoReplyBatch(obj, ch1Voltages, ch2Voltages, varargin)
+            options = obj.parsePointBatchOptions(varargin{:});
+            frames = wgs.internal.buildPoint2NoAckFrames(ch1Voltages, ch2Voltages);
+            pointCount = numel(reshape(ch1Voltages, 1, []));
+            stats = obj.writeFrameBatches(frames, 13, pointCount, options);
+        end
+
+        function stats = point2SetNoAckBatch(obj, ch1Voltages, ch2Voltages, varargin)
+            stats = obj.point2SetNoReplyBatch(ch1Voltages, ch2Voltages, varargin{:});
         end
 
         function reply = pointPulseWidthSet(obj, pulseWidthUs)
@@ -91,7 +110,7 @@ classdef Client < handle
             end
 
             reply = obj.waveformConfig(channel, sampleCount, frequencyHz);
-            if ~reply.isAck
+            if ~obj.isDoneReply(reply)
                 return;
             end
 
@@ -122,6 +141,13 @@ classdef Client < handle
     end
 
     methods (Access = private)
+        function ok = isDoneReply(~, reply)
+            C = wgs.internal.constants();
+            ok = reply.isAck && ...
+                 reply.status == C.ACK_DONE && ...
+                 reply.detail == C.ERROR_NONE;
+        end
+
         function reply = sendSequencePayload(obj, channel, samples)
             C = wgs.internal.constants();
             sampleCount = numel(samples);
@@ -206,6 +232,53 @@ classdef Client < handle
             write(obj.Device, frame, "uint8");
         end
 
+        function stats = writeFrameBatches(obj, frames, frameLength, pointCount, options)
+            obj.ensureOpen();
+
+            stats = struct( ...
+                "sentCount", 0, ...
+                "elapsedSeconds", 0.0, ...
+                "actualRateHz", 0.0);
+
+            if pointCount == 0
+                return;
+            end
+
+            if numel(frames) ~= pointCount * frameLength
+                error("WGS:BadFrameBatch", ...
+                      "Frame batch length does not match frame and point counts.");
+            end
+
+            startTime = tic;
+            for batchStart = 1:options.BatchPointCount:pointCount
+                batchEnd = min(batchStart + options.BatchPointCount - 1, pointCount);
+                byteStart = (batchStart - 1) * frameLength + 1;
+                byteEnd = batchEnd * frameLength;
+
+                if obj.Verbose
+                    fprintf("TX batch: points %d..%d (%d bytes)\n", ...
+                            batchStart, batchEnd, byteEnd - byteStart + 1);
+                end
+
+                write(obj.Device, frames(byteStart:byteEnd), "uint8");
+
+                stats.sentCount = batchEnd;
+                if ~isempty(options.ProgressFcn)
+                    options.ProgressFcn(stats.sentCount, pointCount);
+                end
+
+                if ~isempty(options.PointRateHz)
+                    targetElapsed = stats.sentCount / options.PointRateHz;
+                    while toc(startTime) < targetElapsed
+                        pause(0.001);
+                    end
+                end
+            end
+
+            stats.elapsedSeconds = toc(startTime);
+            stats.actualRateHz = stats.sentCount / max(stats.elapsedSeconds, eps);
+        end
+
         function payload = buildPointSetPayload(~, channel, voltage)
             C = wgs.internal.constants();
             payload = [
@@ -215,10 +288,28 @@ classdef Client < handle
             ];
         end
 
+        function payload = buildPointSetNoAckPayload(~, channel, voltage)
+            C = wgs.internal.constants();
+            payload = [
+                uint8(C.CMD_POINT_SET_NO_ACK), ...
+                wgs.internal.channelByte(channel), ...
+                wgs.internal.float32le(voltage)
+            ];
+        end
+
         function payload = buildPoint2SetPayload(~, ch1Voltage, ch2Voltage)
             C = wgs.internal.constants();
             payload = [
                 uint8(C.CMD_POINT2_SET), ...
+                wgs.internal.float32le(ch1Voltage), ...
+                wgs.internal.float32le(ch2Voltage)
+            ];
+        end
+
+        function payload = buildPoint2SetNoAckPayload(~, ch1Voltage, ch2Voltage)
+            C = wgs.internal.constants();
+            payload = [
+                uint8(C.CMD_POINT2_SET_NO_ACK), ...
                 wgs.internal.float32le(ch1Voltage), ...
                 wgs.internal.float32le(ch2Voltage)
             ];
@@ -270,6 +361,56 @@ classdef Client < handle
         function ensureOpen(obj)
             if isempty(obj.Device) || ~isvalid(obj.Device)
                 error("WGS:SerialClosed", "WGS serial client is closed.");
+            end
+        end
+
+        function options = parsePointBatchOptions(~, varargin)
+            if mod(numel(varargin), 2) ~= 0
+                error("WGS:BadOptions", ...
+                      "Options must be name-value pairs.");
+            end
+
+            options = struct( ...
+                "BatchPointCount", 500, ...
+                "PointRateHz", [], ...
+                "ProgressFcn", []);
+
+            for k = 1:2:numel(varargin)
+                name = lower(string(varargin{k}));
+                value = varargin{k + 1};
+
+                switch name
+                    case "batchpointcount"
+                        value = double(value);
+                        if ~isfinite(value) || value < 1 || value ~= round(value)
+                            error("WGS:BadBatchPointCount", ...
+                                  "BatchPointCount must be a positive integer.");
+                        end
+                        options.BatchPointCount = value;
+                    case "pointratehz"
+                        if isempty(value)
+                            options.PointRateHz = [];
+                        else
+                            value = double(value);
+                            if ~isfinite(value) || value <= 0
+                                error("WGS:BadPointRate", ...
+                                      "PointRateHz must be a positive finite value.");
+                            end
+                            options.PointRateHz = value;
+                        end
+                    case "progressfcn"
+                        if isempty(value)
+                            options.ProgressFcn = [];
+                        elseif isa(value, 'function_handle')
+                            options.ProgressFcn = value;
+                        else
+                            error("WGS:BadProgressFcn", ...
+                                  "ProgressFcn must be a function handle or empty.");
+                        end
+                    otherwise
+                        error("WGS:UnknownOption", ...
+                              "Unknown batch option: %s", name);
+                end
             end
         end
 

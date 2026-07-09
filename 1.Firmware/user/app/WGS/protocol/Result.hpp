@@ -24,10 +24,19 @@ enum class ErrorCode_e : uint8_t {
 
 struct Result_s {
   ErrorCode_e code{ErrorCode_e::NONE};
+  bool busy_{false};
 
-  constexpr bool ok() const { return code == ErrorCode_e::NONE; }
+  constexpr bool ok() const {
+    return code == ErrorCode_e::NONE && !busy_;
+  }
+
+  constexpr bool isBusy() const { return busy_; }
 
   static constexpr Result_s success() { return {}; }
+
+  static constexpr Result_s busy() {
+    return Result_s{.code = ErrorCode_e::NONE, .busy_ = true};
+  }
 
   static Result_s
   fail(ErrorCode_e _code,

@@ -7,10 +7,10 @@
 void AppManager::initApp() { createApp(); }
 
 void AppManager::createApp() {
-  // auto &buzzer = buzzer_.construct();
-  // if (!buzzer.init()) {
-  //   LOG::Logger::instance().warn(LOCATION, "App", "buzzer task init failed");
-  // }
+  auto &buzzer = buzzer_.construct();
+  if (!buzzer.init()) {
+    LOG::Logger::instance().warn(LOCATION, "App", "buzzer task init failed");
+  }
 
   auto &wgs = wgs_.construct();
   auto transportResult = wgs.init();
@@ -22,8 +22,8 @@ void AppManager::createApp() {
 
   const size_t freeHeap = xPortGetFreeHeapSize();
   const size_t minimumEverFreeHeap = xPortGetMinimumEverFreeHeapSize();
-  LOG::Logger::instance().info(
-      LOCATION, "App", "init complete, Free Heap: %lu, Min Ever: %lu",
-      static_cast<unsigned long>(freeHeap),
-      static_cast<unsigned long>(minimumEverFreeHeap));
+  LOG::Logger::instance().info(LOCATION, "App",
+                               "init complete, Free Heap: %lu, Min Ever: %lu",
+                               static_cast<unsigned long>(freeHeap),
+                               static_cast<unsigned long>(minimumEverFreeHeap));
 }

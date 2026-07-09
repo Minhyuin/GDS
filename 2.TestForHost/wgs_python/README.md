@@ -87,8 +87,14 @@ PING:
 POINT_SET:
   10 channel float32_le(voltage)
 
+POINT_SET_NO_ACK:
+  12 channel float32_le(voltage)
+
 POINT2_SET:
   11 float32_le(ch1_voltage) float32_le(ch2_voltage)
+
+POINT2_SET_NO_ACK:
+  13 float32_le(ch1_voltage) float32_le(ch2_voltage)
 
 POINT_PULSE_WIDTH_SET:
   50 float32_le(pulse_width_us)
@@ -134,7 +140,9 @@ python scripts/test_protocol.py
 
 - `PING` 帧
 - `POINT_SET CH1 1.5V` 帧
+- `POINT_SET_NO_ACK CH1 1.5V` 帧
 - `POINT2_SET CH1 1.5V CH2 2.5V` 帧
+- `POINT2_SET_NO_ACK CH1 1.5V CH2 2.5V` 帧
 - `POINT_PULSE_WIDTH_SET 50us` 帧
 - `WAVEFORM_CONFIG CH2 256Sa 12.5Hz` 帧
 - `TIMER_SET CH2 100kHz` 帧
@@ -151,6 +159,8 @@ try:
     print(client.ping().summary())
     print(client.point_set("CH2", 1.65).summary())
     print(client.point2_set(1.65, 2.50).summary())
+    client.point_set_no_reply("CH1", 1.65)      # sends POINT_SET_NO_ACK, no firmware reply
+    client.point2_set_no_reply(1.65, 2.50)      # sends POINT2_SET_NO_ACK, no firmware reply
     print(client.point_pulse_width_set(50.0).summary())
     print(client.sequence_set("CH2", [1.65] * 256, frequency_hz=12.5).summary())
 finally:

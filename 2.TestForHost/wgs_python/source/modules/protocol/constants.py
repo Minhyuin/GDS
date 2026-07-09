@@ -28,6 +28,8 @@ class CommandType(IntEnum):
     SYNC = 0x01
     POINT_SET = 0x10
     POINT2_SET = 0x11
+    POINT_SET_NO_ACK = 0x12
+    POINT2_SET_NO_ACK = 0x13
     SEQUENCE_SET = 0x20
     WAVEFORM_CONFIG = 0x30
     TIMER_SET = 0x40

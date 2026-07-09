@@ -27,9 +27,11 @@ public:
   void onTxCompleteFromIsr();
   void onDacDmaHalfCompleteFromIsr();
   void onDacDmaCompleteFromIsr();
+  void onExternalPointTriggerFromIsr();
+  void onPointPulseTimerUpdateFromIsr(OUTPUT::OutputChannel_e _channel);
 
 private:
-  static constexpr uint32_t TASK_STACK_WORDS = 256;
+  static constexpr uint32_t TASK_STACK_WORDS = 768;
   static constexpr UBaseType_t TASK_PRIORITY = tskIDLE_PRIORITY + 3;
   static constexpr size_t MAX_SEQUENCE_POINTS = PROTOCOL::MAX_SEQUENCE_POINTS;
 
@@ -74,3 +76,6 @@ extern "C" void notifyWgsRxFromIsr();
 extern "C" void notifyWgsTxCompleteFromIsr();
 extern "C" void notifyWgsDacDmaHalfCompleteFromIsr();
 extern "C" void notifyWgsDacDmaCompleteFromIsr();
+extern "C" void notifyWgsExternalPointTriggerFromIsr();
+extern "C" void notifyWgsTim4UpdateFromIsr();
+extern "C" void notifyWgsTim5UpdateFromIsr();

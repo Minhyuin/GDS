@@ -19,6 +19,10 @@ function C = constants()
     C.CMD_POINT2_SET = hex2dec("11");
     C.CMD_POINT_SET_NO_ACK = hex2dec("12");
     C.CMD_POINT2_SET_NO_ACK = hex2dec("13");
+    C.CMD_POINT2_FIFO_CLEAR = hex2dec("14");
+    C.CMD_POINT2_FIFO_APPEND = hex2dec("15");
+    C.CMD_POINT2_FIFO_START = hex2dec("16");
+    C.CMD_POINT2_FIFO_STOP = hex2dec("17");
     C.CMD_SEQUENCE_SET = hex2dec("20");
     C.CMD_WAVEFORM_CONFIG = hex2dec("30");
     C.CMD_TIMER_SET = hex2dec("40");
@@ -36,4 +40,5 @@ function C = constants()
     C.SEQUENCE_SET_HEADER_SIZE = 4;
     C.SEQUENCE_POINT_SIZE = 4;
     C.MAX_SEQUENCE_POINTS = C.PERIOD_SAMPLE_COUNT;
+    C.POINT2_FIFO_APPEND_MAX_POINTS = 500;
 end

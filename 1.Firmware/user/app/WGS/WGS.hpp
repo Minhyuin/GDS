@@ -65,6 +65,9 @@ private:
   DacPlayer dacPlayer_;
   OutputController output_;
   std::array<PROTOCOL::DacSample_s, MAX_SEQUENCE_POINTS> decodeScratch_{};
+  std::array<PROTOCOL::Point2FifoPoint_s,
+             PROTOCOL::POINT2_FIFO_APPEND_MAX_POINTS>
+      point2FifoDecodeScratch_{};
   StaticTask_t taskControlBlock_{};
   StackType_t taskStack_[TASK_STACK_WORDS]{};
   TaskHandle_t taskHandle_{nullptr};

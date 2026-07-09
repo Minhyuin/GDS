@@ -126,7 +126,7 @@ public:
     return HAL_OK;
   }
 
-  static bool completePreparedSinglePulseFromIsr() {
+  static bool completePreparedSinglePulseFromIsr(bool _keepPrepared = false) {
     if (!singlePulseFiring_) {
       disableUpdateInterrupt();
       clearUpdateFlag();
@@ -136,8 +136,12 @@ public:
     disableUpdateInterrupt();
     clearUpdateFlag();
     const auto pwmStatus = stopAckPwm();
-    restoreConfig(singlePulseRestoreConfig_);
-    singlePulsePrepared_ = false;
+    if (!_keepPrepared) {
+      restoreConfig(singlePulseRestoreConfig_);
+      singlePulsePrepared_ = false;
+    } else {
+      resetCounter();
+    }
     singlePulseFiring_ = false;
     timer().State = HAL_TIM_STATE_READY;
     return pwmStatus == HAL_OK;

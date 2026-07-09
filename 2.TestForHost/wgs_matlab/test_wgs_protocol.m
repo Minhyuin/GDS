@@ -70,6 +70,36 @@ function test_wgs_protocol()
                "Expected WGS:BadPoint2Batch, got %s.", err.identifier);
     end
 
+    fifoClearFrame = wgs.internal.buildFrame(C.FRAME_COMMAND, uint8(C.CMD_POINT2_FIFO_CLEAR));
+    assertBytesEqual(fifoClearFrame, uint8([hex2dec("A5"), 1, 1, 0, hex2dec("14")]));
+
+    fifoAppendPayload = wgs.internal.buildPoint2FifoAppendPayload([1.5, 1.25], [2.5, 2.25]);
+    expectedFifoAppendPayload = uint8([ ...
+        hex2dec("15"), 2, 0, ...
+        0, 0, hex2dec("C0"), hex2dec("3F"), ...
+        0, 0, hex2dec("20"), hex2dec("40"), ...
+        0, 0, hex2dec("A0"), hex2dec("3F"), ...
+        0, 0, hex2dec("10"), hex2dec("40")]);
+    assertBytesEqual(fifoAppendPayload, expectedFifoAppendPayload);
+    fifoAppendFrame = wgs.internal.buildFrame(C.FRAME_COMMAND, fifoAppendPayload);
+    assertBytesEqual(fifoAppendFrame, uint8([ ...
+        hex2dec("A5"), 1, hex2dec("13"), 0, expectedFifoAppendPayload]));
+
+    try
+        wgs.internal.buildPoint2FifoAppendPayload([1.0, 2.0], 1.5);
+        error("WGS:ExpectedErrorMissing", ...
+              "buildPoint2FifoAppendPayload should reject mismatched vector lengths.");
+    catch err
+        assert(strcmp(err.identifier, "WGS:BadPoint2FifoAppend"), ...
+               "Expected WGS:BadPoint2FifoAppend, got %s.", err.identifier);
+    end
+
+    fifoStartFrame = wgs.internal.buildFrame(C.FRAME_COMMAND, uint8(C.CMD_POINT2_FIFO_START));
+    assertBytesEqual(fifoStartFrame, uint8([hex2dec("A5"), 1, 1, 0, hex2dec("16")]));
+
+    fifoStopFrame = wgs.internal.buildFrame(C.FRAME_COMMAND, uint8(C.CMD_POINT2_FIFO_STOP));
+    assertBytesEqual(fifoStopFrame, uint8([hex2dec("A5"), 1, 1, 0, hex2dec("17")]));
+
     pulsePayload = [
         uint8(C.CMD_POINT_PULSE_WIDTH_SET), ...
         wgs.internal.float32le(50.0)

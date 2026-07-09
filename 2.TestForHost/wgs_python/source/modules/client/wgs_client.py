@@ -2,6 +2,10 @@ from ..protocol.codec import (
     ping_frame,
     point_set_no_ack_frame,
     point_set_frame,
+    point2_fifo_append_frame,
+    point2_fifo_clear_frame,
+    point2_fifo_start_frame,
+    point2_fifo_stop_frame,
     point2_set_no_ack_frame,
     point2_set_frame,
     point_pulse_width_set_frame,
@@ -60,6 +64,18 @@ class WgsClient:
 
     def point2_set_no_ack(self, ch1_voltage, ch2_voltage):
         self.point2_set_no_reply(ch1_voltage, ch2_voltage)
+
+    def point2_fifo_clear(self):
+        return self.send_command(point2_fifo_clear_frame())
+
+    def point2_fifo_append(self, ch1_voltages, ch2_voltages):
+        return self.send_command(point2_fifo_append_frame(ch1_voltages, ch2_voltages))
+
+    def point2_fifo_start(self):
+        return self.send_command(point2_fifo_start_frame())
+
+    def point2_fifo_stop(self):
+        return self.send_command(point2_fifo_stop_frame())
 
     def point_pulse_width_set(self, pulse_width_us):
         return self.send_command(point_pulse_width_set_frame(pulse_width_us))

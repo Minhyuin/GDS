@@ -49,6 +49,32 @@ def point2_set_no_ack_frame(ch1_voltage, ch2_voltage):
     return _point2_set_frame(CommandType.POINT2_SET_NO_ACK, ch1_voltage, ch2_voltage)
 
 
+def point2_fifo_clear_frame():
+    return build_frame(FrameType.COMMAND, bytes([CommandType.POINT2_FIFO_CLEAR]))
+
+
+def point2_fifo_append_frame(ch1_voltages, ch2_voltages):
+    ch1_values = [float(value) for value in ch1_voltages]
+    ch2_values = [float(value) for value in ch2_voltages]
+    if len(ch1_values) != len(ch2_values):
+        raise ValueError("POINT2_FIFO_APPEND voltage lists must have the same length")
+    if not 1 <= len(ch1_values) <= 500:
+        raise ValueError("POINT2_FIFO_APPEND requires 1..500 points")
+
+    payload = bytes([CommandType.POINT2_FIFO_APPEND]) + struct.pack("<H", len(ch1_values))
+    for ch1_voltage, ch2_voltage in zip(ch1_values, ch2_values):
+        payload += struct.pack("<f", ch1_voltage) + struct.pack("<f", ch2_voltage)
+    return build_frame(FrameType.COMMAND, payload)
+
+
+def point2_fifo_start_frame():
+    return build_frame(FrameType.COMMAND, bytes([CommandType.POINT2_FIFO_START]))
+
+
+def point2_fifo_stop_frame():
+    return build_frame(FrameType.COMMAND, bytes([CommandType.POINT2_FIFO_STOP]))
+
+
 def point_pulse_width_set_frame(pulse_width_us):
     pulse_width_us = float(pulse_width_us)
     if not math.isfinite(pulse_width_us) or not POINT_PULSE_WIDTH_MIN_US <= pulse_width_us <= POINT_PULSE_WIDTH_MAX_US:

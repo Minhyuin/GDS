@@ -121,6 +121,41 @@ def test_exti_and_tim_callbacks_bridge_to_wgs_fast_path():
     assert_contains(main_c, "notifyWgsTim5UpdateFromIsr", "TIM5 callback should reach WGS")
 
 
+def test_point2_fifo_protocol_and_external_trigger_path():
+    command = read("user/app/WGS/protocol/Command.hpp")
+    wgs_cc = read("user/app/WGS/WGS.cc")
+    player = read("user/app/WGS/output/DacWavePlayer.hpp")
+    output_mode = read("user/app/WGS/output/OutputMode.hpp")
+
+    assert_contains(command, "POINT2_FIFO_CLEAR = 0x14", "POINT2 FIFO clear command id")
+    assert_contains(command, "POINT2_FIFO_APPEND = 0x15", "POINT2 FIFO append command id")
+    assert_contains(command, "POINT2_FIFO_START = 0x16", "POINT2 FIFO start command id")
+    assert_contains(command, "POINT2_FIFO_STOP = 0x17", "POINT2 FIFO stop command id")
+    assert_contains(command, "POINT2_FIFO_APPEND_HEADER_SIZE = 3", "POINT2 FIFO append header size")
+    assert_contains(command, "POINT2_FIFO_POINT_SIZE = 8", "POINT2 FIFO point size")
+    assert_contains(command, "POINT2_FIFO_APPEND_MAX_POINTS = 500", "POINT2 FIFO append max points")
+    assert_contains(command, "Point2FifoPoint_s", "POINT2 FIFO point type")
+    assert_contains(command, "Point2FifoAppendCommand_s", "POINT2 FIFO append command type")
+
+    assert_contains(wgs_cc, "POINT2_FIFO_APPEND_HEADER_SIZE", "POINT2 FIFO decode path")
+    assert_contains(wgs_cc, "Point2FifoAppendCommand_s", "POINT2 FIFO decoded command")
+
+    assert_contains(player, "POINT2_FIFO_CAPACITY = 1024", "POINT2 FIFO capacity")
+    assert_contains(player, "appendPoint2Fifo", "POINT2 FIFO append API")
+    assert_contains(player, "startPoint2Fifo", "POINT2 FIFO start API")
+    assert_contains(player, "stopPoint2Fifo", "POINT2 FIFO stop API")
+    assert_contains(player, "firePoint2FifoFromIsr", "EXTI should consume FIFO points")
+    assert_contains(player, "clearPoint2Fifo()", "STOP should clear queued FIFO points")
+    assert_contains(player, "point2FifoEnabled_", "player should track FIFO enable state")
+    assert_order(player, "firePoint2FifoFromIsr", "uint8_t mask = POINT_PULSE_NONE", "FIFO should be checked before legacy pending pulse")
+
+    assert_contains(output_mode, "Point2FifoClearCommand_s", "POINT2 FIFO clear dispatch")
+    assert_contains(output_mode, "Point2FifoAppendCommand_s", "POINT2 FIFO append dispatch")
+    assert_contains(output_mode, "Point2FifoStartCommand_s", "POINT2 FIFO start dispatch")
+    assert_contains(output_mode, "Point2FifoStopCommand_s", "POINT2 FIFO stop dispatch")
+    assert_contains(output_mode, "isPoint2FifoActive()", "non-FIFO commands should reject while FIFO is active")
+
+
 def test_readme_documents_external_trigger_limitations():
     readme = read("user/app/WGS/README.md")
 
@@ -140,6 +175,7 @@ def run_all():
         test_busy_is_reported_as_ack_busy_none,
         test_tim_proxy_has_nonblocking_prepared_one_pulse_path,
         test_exti_and_tim_callbacks_bridge_to_wgs_fast_path,
+        test_point2_fifo_protocol_and_external_trigger_path,
         test_readme_documents_external_trigger_limitations,
     ]
     for test in tests:

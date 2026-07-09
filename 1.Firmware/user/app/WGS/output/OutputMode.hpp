@@ -69,7 +69,7 @@ public:
       return APP::WGS::PROTOCOL::Result_s::fail(
           APP::WGS::PROTOCOL::ErrorCode_e::INVALID_STATE);
     }
-    if (_ctx.player->isPointPulseBusy()) {
+    if (_ctx.player->isPointPulseBusy() || _ctx.player->isPoint2FifoActive()) {
       return APP::WGS::PROTOCOL::Result_s::busy();
     }
 
@@ -87,6 +87,9 @@ public:
       _ctx.state = OutputState_e::FAULT;
       return APP::WGS::PROTOCOL::Result_s::fail(
           APP::WGS::PROTOCOL::ErrorCode_e::INVALID_STATE);
+    }
+    if (_ctx.player->isPoint2FifoActive()) {
+      return APP::WGS::PROTOCOL::Result_s::busy();
     }
 
     const auto channel = toOutputChannel(_cmd.channel);
@@ -106,6 +109,9 @@ public:
       return APP::WGS::PROTOCOL::Result_s::fail(
           APP::WGS::PROTOCOL::ErrorCode_e::INVALID_STATE);
     }
+    if (_ctx.player->isPoint2FifoActive()) {
+      return APP::WGS::PROTOCOL::Result_s::busy();
+    }
 
     auto result =
         _ctx.player->holdChannels(_cmd.ch1Sample.value, _cmd.ch2Sample.value,
@@ -118,13 +124,61 @@ public:
 
   APP::WGS::PROTOCOL::Result_s
   handle(OutputContext_s<Player_s> &_ctx,
+         const APP::WGS::PROTOCOL::Point2FifoClearCommand_s &) {
+    if (_ctx.player == nullptr) {
+      _ctx.state = OutputState_e::FAULT;
+      return APP::WGS::PROTOCOL::Result_s::fail(
+          APP::WGS::PROTOCOL::ErrorCode_e::INVALID_STATE);
+    }
+
+    return _ctx.player->clearPoint2Fifo();
+  }
+
+  APP::WGS::PROTOCOL::Result_s
+  handle(OutputContext_s<Player_s> &_ctx,
+         const APP::WGS::PROTOCOL::Point2FifoAppendCommand_s &_cmd) {
+    if (_ctx.player == nullptr) {
+      _ctx.state = OutputState_e::FAULT;
+      return APP::WGS::PROTOCOL::Result_s::fail(
+          APP::WGS::PROTOCOL::ErrorCode_e::INVALID_STATE);
+    }
+
+    return _ctx.player->appendPoint2Fifo(_cmd.points);
+  }
+
+  APP::WGS::PROTOCOL::Result_s
+  handle(OutputContext_s<Player_s> &_ctx,
+         const APP::WGS::PROTOCOL::Point2FifoStartCommand_s &) {
+    if (_ctx.player == nullptr) {
+      _ctx.state = OutputState_e::FAULT;
+      return APP::WGS::PROTOCOL::Result_s::fail(
+          APP::WGS::PROTOCOL::ErrorCode_e::INVALID_STATE);
+    }
+
+    return _ctx.player->startPoint2Fifo();
+  }
+
+  APP::WGS::PROTOCOL::Result_s
+  handle(OutputContext_s<Player_s> &_ctx,
+         const APP::WGS::PROTOCOL::Point2FifoStopCommand_s &) {
+    if (_ctx.player == nullptr) {
+      _ctx.state = OutputState_e::FAULT;
+      return APP::WGS::PROTOCOL::Result_s::fail(
+          APP::WGS::PROTOCOL::ErrorCode_e::INVALID_STATE);
+    }
+
+    return _ctx.player->stopPoint2Fifo();
+  }
+
+  APP::WGS::PROTOCOL::Result_s
+  handle(OutputContext_s<Player_s> &_ctx,
          const APP::WGS::PROTOCOL::PointPulseWidthSetCommand_s &_cmd) {
     if (_ctx.player == nullptr) {
       _ctx.state = OutputState_e::FAULT;
       return APP::WGS::PROTOCOL::Result_s::fail(
           APP::WGS::PROTOCOL::ErrorCode_e::INVALID_STATE);
     }
-    if (_ctx.player->isPointPulseBusy()) {
+    if (_ctx.player->isPointPulseBusy() || _ctx.player->isPoint2FifoActive()) {
       return APP::WGS::PROTOCOL::Result_s::busy();
     }
 
@@ -139,7 +193,7 @@ public:
       return APP::WGS::PROTOCOL::Result_s::fail(
           APP::WGS::PROTOCOL::ErrorCode_e::INVALID_STATE);
     }
-    if (_ctx.player->isPointPulseBusy()) {
+    if (_ctx.player->isPointPulseBusy() || _ctx.player->isPoint2FifoActive()) {
       return APP::WGS::PROTOCOL::Result_s::busy();
     }
 
@@ -169,7 +223,7 @@ public:
       return APP::WGS::PROTOCOL::Result_s::fail(
           APP::WGS::PROTOCOL::ErrorCode_e::INVALID_STATE);
     }
-    if (_ctx.player->isPointPulseBusy()) {
+    if (_ctx.player->isPointPulseBusy() || _ctx.player->isPoint2FifoActive()) {
       return APP::WGS::PROTOCOL::Result_s::busy();
     }
 
@@ -186,7 +240,7 @@ public:
       return APP::WGS::PROTOCOL::Result_s::fail(
           APP::WGS::PROTOCOL::ErrorCode_e::INVALID_STATE);
     }
-    if (_ctx.player->isPointPulseBusy()) {
+    if (_ctx.player->isPointPulseBusy() || _ctx.player->isPoint2FifoActive()) {
       return APP::WGS::PROTOCOL::Result_s::busy();
     }
 

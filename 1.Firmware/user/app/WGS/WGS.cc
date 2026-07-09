@@ -268,6 +268,64 @@ PROTOCOL::Result_s WGSManager::decodeCommand(const PROTOCOL::Frame_s &_frame,
     };
     return PROTOCOL::Result_s::success();
   }
+  case PROTOCOL::CommandType_e::POINT2_FIFO_CLEAR: {
+    if (_frame.payload.size() != PROTOCOL::POINT2_FIFO_CONTROL_PAYLOAD_SIZE) {
+      return PROTOCOL::Result_s::fail(PROTOCOL::ErrorCode_e::BAD_LENGTH);
+    }
+    _command = PROTOCOL::Point2FifoClearCommand_s{};
+    return PROTOCOL::Result_s::success();
+  }
+  case PROTOCOL::CommandType_e::POINT2_FIFO_APPEND: {
+    if (_frame.payload.size() < PROTOCOL::POINT2_FIFO_APPEND_HEADER_SIZE) {
+      return PROTOCOL::Result_s::fail(PROTOCOL::ErrorCode_e::BAD_LENGTH);
+    }
+
+    const size_t pointCount = readU16(_frame.payload, 1);
+    if (pointCount == 0U ||
+        pointCount > PROTOCOL::POINT2_FIFO_APPEND_MAX_POINTS) {
+      return PROTOCOL::Result_s::fail(PROTOCOL::ErrorCode_e::BAD_LENGTH);
+    }
+
+    const size_t expectedPayloadSize =
+        PROTOCOL::POINT2_FIFO_APPEND_HEADER_SIZE +
+        pointCount * PROTOCOL::POINT2_FIFO_POINT_SIZE;
+    if (_frame.payload.size() != expectedPayloadSize) {
+      return PROTOCOL::Result_s::fail(PROTOCOL::ErrorCode_e::BAD_LENGTH);
+    }
+
+    size_t offset = PROTOCOL::POINT2_FIFO_APPEND_HEADER_SIZE;
+    for (size_t i = 0; i < pointCount; ++i) {
+      const float ch1Voltage = readFloat32Le(_frame.payload, offset);
+      const float ch2Voltage = readFloat32Le(_frame.payload, offset + 4U);
+      point2FifoDecodeScratch_[i] = PROTOCOL::Point2FifoPoint_s{
+          .ch1Sample =
+              PROTOCOL::DacSample_s{.value = voltageToDacCode(ch1Voltage)},
+          .ch2Sample =
+              PROTOCOL::DacSample_s{.value = voltageToDacCode(ch2Voltage)},
+      };
+      offset += PROTOCOL::POINT2_FIFO_POINT_SIZE;
+    }
+
+    _command = PROTOCOL::Point2FifoAppendCommand_s{
+        .points = std::span<const PROTOCOL::Point2FifoPoint_s>(
+            point2FifoDecodeScratch_.data(), pointCount),
+    };
+    return PROTOCOL::Result_s::success();
+  }
+  case PROTOCOL::CommandType_e::POINT2_FIFO_START: {
+    if (_frame.payload.size() != PROTOCOL::POINT2_FIFO_CONTROL_PAYLOAD_SIZE) {
+      return PROTOCOL::Result_s::fail(PROTOCOL::ErrorCode_e::BAD_LENGTH);
+    }
+    _command = PROTOCOL::Point2FifoStartCommand_s{};
+    return PROTOCOL::Result_s::success();
+  }
+  case PROTOCOL::CommandType_e::POINT2_FIFO_STOP: {
+    if (_frame.payload.size() != PROTOCOL::POINT2_FIFO_CONTROL_PAYLOAD_SIZE) {
+      return PROTOCOL::Result_s::fail(PROTOCOL::ErrorCode_e::BAD_LENGTH);
+    }
+    _command = PROTOCOL::Point2FifoStopCommand_s{};
+    return PROTOCOL::Result_s::success();
+  }
   case PROTOCOL::CommandType_e::POINT_PULSE_WIDTH_SET: {
     if (_frame.payload.size() != PROTOCOL::POINT_PULSE_WIDTH_SET_PAYLOAD_SIZE) {
       return PROTOCOL::Result_s::fail(PROTOCOL::ErrorCode_e::BAD_LENGTH);

@@ -6,6 +6,8 @@ POINT2_SCRIPTS = [
     PROJECT_ROOT / "wgs_uart_demo.m",
     PROJECT_ROOT / "wgs_point_sine_demo.m",
     PROJECT_ROOT / "wgs_point2_snake.m",
+    PROJECT_ROOT / "wgs_point2_batch_snake.m",
+    PROJECT_ROOT / "wgs_point2_fifo_snake.m",
 ]
 
 
@@ -14,8 +16,8 @@ def test_point_scripts_use_point2_set_only():
         text = script_path.read_text(encoding="utf-8")
         if "pointSet" in text or "POINT_SET" in text:
             raise AssertionError(f"{script_path.name} still uses POINT_SET")
-        if "point2Set" not in text and "POINT2_SET" not in text:
-            raise AssertionError(f"{script_path.name} does not use POINT2_SET")
+        if "point2Set" not in text and "POINT2_SET" not in text and "POINT2_FIFO" not in text:
+            raise AssertionError(f"{script_path.name} does not use POINT2 output")
 
 
 def test_snake_sets_ack_pulse_width_after_ping():
@@ -31,12 +33,29 @@ def test_snake_sets_ack_pulse_width_after_ping():
         raise AssertionError("ackPulseUs should be set after PING and before point output")
 
 
-def test_snake_uses_point2_no_reply_batch_for_scan_loop():
+def test_snake_uses_point2_no_reply_for_scan_loop():
     text = (PROJECT_ROOT / "wgs_point2_snake.m").read_text(encoding="utf-8")
+
+    required = "client.point2SetNoReply(xPositions(idx), yPosition);"
+    if required not in text:
+        raise AssertionError("wgs_point2_snake.m should keep the non-batched per-point sender")
+
+    if "point2SetNoReplyBatch(" in text:
+        raise AssertionError("wgs_point2_snake.m should not use the batched sender")
+
+    if "reply = client.point2Set(xPositions(idx), yPosition);" in text:
+        raise AssertionError("wgs_point2_snake.m should not wait for each scan POINT2_SET reply")
+
+    if 'wgs.printReply("INIT XY", reply);' not in text:
+        raise AssertionError("wgs_point2_snake.m should still print setup replies outside the scan loop")
+
+
+def test_batch_snake_uses_point2_no_reply_batch_for_scan_loop():
+    text = (PROJECT_ROOT / "wgs_point2_batch_snake.m").read_text(encoding="utf-8")
 
     required = "client.point2SetNoReplyBatch("
     if required not in text:
-        raise AssertionError("wgs_point2_snake.m should use the batched POINT2_SET_NO_ACK sender")
+        raise AssertionError("wgs_point2_batch_snake.m should use the batched POINT2_SET_NO_ACK sender")
 
     required_options = [
         '"PointRateHz", pointRateHz',
@@ -45,16 +64,16 @@ def test_snake_uses_point2_no_reply_batch_for_scan_loop():
     ]
     for needle in required_options:
         if needle not in text:
-            raise AssertionError(f"wgs_point2_snake.m should pass batch sender option {needle}")
+            raise AssertionError(f"wgs_point2_batch_snake.m should pass batch sender option {needle}")
 
     if 'wgs.printReply("INIT XY", reply);' not in text:
-        raise AssertionError("wgs_point2_snake.m should still print setup replies outside the scan loop")
+        raise AssertionError("wgs_point2_batch_snake.m should still print setup replies outside the scan loop")
 
     if "client.point2SetNoReply(xPositions(idx), yPosition);" in text:
-        raise AssertionError("wgs_point2_snake.m should not write one point per MATLAB loop iteration")
+        raise AssertionError("wgs_point2_batch_snake.m should not write one point per MATLAB loop iteration")
 
     if "reply = client.point2Set(xPositions(idx), yPosition);" in text:
-        raise AssertionError("wgs_point2_snake.m should not wait for each scan POINT2_SET reply")
+        raise AssertionError("wgs_point2_batch_snake.m should not wait for each scan POINT2_SET reply")
 
 
 def test_matlab_client_no_reply_methods_use_no_ack_payloads():
@@ -71,6 +90,12 @@ def test_matlab_client_no_reply_methods_use_no_ack_payloads():
         "function stats = point2SetNoReplyBatch",
         "buildPoint2NoAckFrames",
         "writeFrameBatches",
+        "function reply = point2FifoClear",
+        "function reply = point2FifoAppend",
+        "function reply = point2FifoStart",
+        "function reply = point2FifoStop",
+        "function stats = point2FifoStream",
+        "buildPoint2FifoAppendPayload",
     ]
     for needle in required:
         if needle not in text and needle not in constants:
@@ -82,15 +107,47 @@ def test_matlab_client_no_reply_methods_use_no_ack_payloads():
         raise AssertionError("point2SetNoReply() should not send the ACK POINT2_SET payload")
 
 
+def test_fifo_snake_uses_point2_fifo_stream():
+    script_path = PROJECT_ROOT / "wgs_point2_fifo_snake.m"
+    if not script_path.exists():
+        raise AssertionError("wgs_point2_fifo_snake.m should exist")
+
+    text = script_path.read_text(encoding="utf-8")
+    required = [
+        "client.point2FifoStream(",
+        '"AppendPointCount", appendPointCount',
+        '"PreloadPointCount", preloadPointCount',
+        '"StopAfterSend", false',
+        '"ProgressFcn", progressFcn',
+        "client.point2FifoStop()",
+    ]
+    for needle in required:
+        if needle not in text:
+            raise AssertionError(f"wgs_point2_fifo_snake.m missing {needle}")
+
+    forbidden = [
+        "point2SetNoReplyBatch(",
+        "point2SetNoReply(xPositions(idx)",
+        "reply = client.point2Set(xPositions(idx)",
+    ]
+    for needle in forbidden:
+        if needle in text:
+            raise AssertionError(f"wgs_point2_fifo_snake.m should not use legacy point stream {needle}")
+
+
 def run_all():
     test_point_scripts_use_point2_set_only()
     test_snake_sets_ack_pulse_width_after_ping()
-    test_snake_uses_point2_no_reply_batch_for_scan_loop()
+    test_snake_uses_point2_no_reply_for_scan_loop()
+    test_batch_snake_uses_point2_no_reply_batch_for_scan_loop()
     test_matlab_client_no_reply_methods_use_no_ack_payloads()
+    test_fifo_snake_uses_point2_fifo_stream()
     print("PASS test_point_scripts_use_point2_set_only")
     print("PASS test_snake_sets_ack_pulse_width_after_ping")
-    print("PASS test_snake_uses_point2_no_reply_batch_for_scan_loop")
+    print("PASS test_snake_uses_point2_no_reply_for_scan_loop")
+    print("PASS test_batch_snake_uses_point2_no_reply_batch_for_scan_loop")
     print("PASS test_matlab_client_no_reply_methods_use_no_ack_payloads")
+    print("PASS test_fifo_snake_uses_point2_fifo_stream")
 
 
 if __name__ == "__main__":

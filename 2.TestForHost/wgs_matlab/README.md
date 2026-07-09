@@ -14,6 +14,9 @@ wgs_matlab/
     +internal/            帧协议辅助函数
   wgs_uart_demo.m         端到端硬件演示
   wgs_point_sine_demo.m   POINT2_SET for 循环正弦演示
+  wgs_point2_snake.m      逐点 POINT2_SET_NO_ACK 蛇形扫描
+  wgs_point2_batch_snake.m 批量 POINT2_SET_NO_ACK 蛇形扫描
+  wgs_point2_fifo_snake.m 固件 FIFO 外部触发蛇形扫描
   test_wgs_protocol.m     无需硬件的帧构造测试
 ```
 
@@ -161,6 +164,11 @@ reply.detailName   detail 文本，例如 NONE / INVALID_STATE
 | `client.point2Set` | `reply = client.point2Set(ch1Voltage, ch2Voltage)` | `ch1Voltage`, `ch2Voltage` | `reply` | 同一帧同时输出 CH1 / CH2 的目标电压。 |
 | `client.point2SetNoReply` / `client.point2SetNoAck` | `client.point2SetNoReply(ch1Voltage, ch2Voltage)` | `ch1Voltage`, `ch2Voltage` | 无 | 发送 `POINT2_SET_NO_ACK = 0x13`。适合高频双通道单点扫描，但不会逐帧确认固件状态。 |
 | `client.point2SetNoReplyBatch` / `client.point2SetNoAckBatch` | `stats = client.point2SetNoReplyBatch(ch1Voltages, ch2Voltages, name, value, ...)` | `ch1Voltages`, `ch2Voltages` | `stats` | 批量预构建连续 `POINT2_SET_NO_ACK` 帧，并按批次写入串口，避免 MATLAB 每点一次 `write()` 的约 1 kHz 调用瓶颈。 |
+| `client.point2FifoClear` | `reply = client.point2FifoClear()` | 无 | `reply` | 清空固件 POINT2 FIFO，并停止 FIFO 外部触发输出。 |
+| `client.point2FifoAppend` | `reply = client.point2FifoAppend(ch1Voltages, ch2Voltages)` | `ch1Voltages`, `ch2Voltages` | `reply` | 追加最多 500 个双通道点到固件 FIFO。FIFO 空间不足时固件返回 `ACK / BUSY / NONE`。 |
+| `client.point2FifoStart` | `reply = client.point2FifoStart()` | 无 | `reply` | 开启 FIFO 外部触发输出。之后每个 `EXT_PULSE_IN` 上升沿消费一个 FIFO 点。 |
+| `client.point2FifoStop` | `reply = client.point2FifoStop()` | 无 | `reply` | 停止 FIFO 外部触发输出并清空 FIFO，避免残留旧轨迹。 |
+| `client.point2FifoStream` | `stats = client.point2FifoStream(ch1Voltages, ch2Voltages, name, value, ...)` | `ch1Voltages`, `ch2Voltages` | `stats` | 高层流式发送：clear、预装 FIFO、start、边发送边按 BUSY 重试追加。默认发送完不自动 stop。 |
 | `client.pointPulseWidthSet` | `reply = client.pointPulseWidthSet(pulseWidthUs)` | `pulseWidthUs` | `reply` | 单点模式脉宽独立设置，允许范围为 `1..1000000`，默认值为 `10 us`。 |
 | `client.waveformConfig` | `reply = client.waveformConfig(channel, lengthSa, frequencyHz)` | `channel`, `lengthSa`, `frequencyHz` | `reply` | 配置通道波形长度和波形频率。`lengthSa` 必须为 `1..1000` 的整数，且 `lengthSa * frequencyHz <= 100000 Sa/s`。 |
 | `client.sequenceSet` | `reply = client.sequenceSet(channel, samples, frequencyHz)` | `channel`, `samples`, `frequencyHz` | `reply` | 推荐的序列发送入口。客户端会先调用 `waveformConfig(channel, numel(samples), frequencyHz)`，成功后再发送 `samples`。 |
@@ -203,7 +211,8 @@ sampleRateHz = numel(samples) * frequencyHz
 - 周期波形：优先调用 `sequenceSet(channel, samples, frequencyHz)`，让客户端先配置长度/频率再发送序列。
 - 双通道同相启动：先分别对 CH1、CH2 调用 `sequenceSet()`，确认都返回 ACK 后，再调用 `sync()`。
 - 高速单点扫描：使用 `pointSetNoReply()` / `point2SetNoReply()` 发送真正的 NO_ACK 单点命令，避免固件 ACK 流量积压。
-- 高频双通道逐点扫描：优先使用 `point2SetNoReplyBatch()`。它先把点列编码成连续帧，再按批次 `write()`，可选 `"PointRateHz"`、`"BatchPointCount"` 和 `"ProgressFcn"`。
+- 高频双通道逐点扫描：优先使用 `point2SetNoReplyBatch()` 或 `wgs_point2_batch_snake.m`。它先把点列编码成连续帧，再按批次 `write()`，可选 `"PointRateHz"`、`"BatchPointCount"` 和 `"ProgressFcn"`。
+- 外部 5 kHz 逐点触发扫描：优先使用 `point2FifoStream()` 或 `wgs_point2_fifo_snake.m`。固件 FIFO 深度为 `1024` 点，单次 append 最多 `500` 点，发送完默认不自动 stop；确认外部触发已消费完后再调用 `point2FifoStop()` 清空。
 - 高速或长序列发送时，不要并发操作同一个串口；每条带应答命令应等待返回后再发送下一条。
 
 批量单点发送示例：
@@ -216,6 +225,20 @@ stats = client.point2SetNoReplyBatch( ...
     "ProgressFcn", @(sent, total) fprintf("%d/%d\n", sent, total));
 
 fprintf("actual %.1f cmds/s\n", stats.actualRateHz);
+```
+
+FIFO 单点发送示例：
+
+```matlab
+stats = client.point2FifoStream( ...
+    xVoltages, yVoltages, ...
+    "AppendPointCount", 500, ...
+    "PreloadPointCount", 500, ...
+    "StopAfterSend", false, ...
+    "ProgressFcn", @(sent, total) fprintf("%d/%d queued\n", sent, total));
+
+pause(numel(xVoltages) / 5000 + 0.1);  % 等待外部触发消费完 FIFO
+client.point2FifoStop();               % stop 会清空 FIFO
 ```
 
 ## DTR/RTS 注意事项
@@ -271,6 +294,19 @@ POINT2_SET:
 POINT2_SET_NO_ACK:
   payload = 13 float32_le(ch1_voltage) float32_le(ch2_voltage)
 
+POINT2_FIFO_CLEAR:
+  payload = 14
+
+POINT2_FIFO_APPEND:
+  payload = 15 uint16_le(point_count)
+            point_count * (float32_le(ch1_voltage) float32_le(ch2_voltage))
+
+POINT2_FIFO_START:
+  payload = 16
+
+POINT2_FIFO_STOP:
+  payload = 17
+
 POINT_PULSE_WIDTH_SET:
   payload = 50 float32_le(pulse_width_us)
 
@@ -323,3 +359,27 @@ wgs_point_sine_demo
 这个脚本逐点发送 `POINT2_SET_NO_ACK`，在目标通道输出正弦电压，同时让另一通道保持中心电压，适合验证高频单点发送路径。它不是稳定周期波形方案；稳定周期波形应使用 `sequenceSet()`。
 
 `wgs_point_sine_demo` 使用 `client.point2SetNoReply()` 提高逐点发送速度。这个接口发送 `POINT2_SET_NO_ACK` 命令帧；有效命令不会产生固件 ACK，因此回到普通带应答命令前通常不需要清理积压回复。
+
+运行逐点蛇形扫描 demo：
+
+```matlab
+wgs_point2_snake
+```
+
+这个脚本保留非 batch 写法，在 MATLAB 循环里每个点调用一次 `client.point2SetNoReply()`。它适合对照验证原始逐点发送路径；高频扫描时通常会受 MATLAB/serialport 单次 `write()` 调用开销限制。
+
+运行批量蛇形扫描 demo：
+
+```matlab
+wgs_point2_batch_snake
+```
+
+这个脚本使用 `client.point2SetNoReplyBatch()` 预构建连续 `POINT2_SET_NO_ACK` 帧并分批写入串口，适合验证无外部触发时的高速双通道点列发送。
+
+运行 FIFO 外部触发蛇形扫描 demo：
+
+```matlab
+wgs_point2_fifo_snake
+```
+
+这个脚本使用 `client.point2FifoStream()` 把蛇形轨迹送入固件 FIFO。之后每个 `EXT_PULSE_IN` 上升沿消费一个点，适合验证外部 5 kHz 触发下的逐点输出。

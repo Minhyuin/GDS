@@ -10,6 +10,10 @@ from source.modules.protocol.codec import (  # noqa: E402
     ping_frame,
     point_set_no_ack_frame,
     point_set_frame,
+    point2_fifo_append_frame,
+    point2_fifo_clear_frame,
+    point2_fifo_start_frame,
+    point2_fifo_stop_frame,
     point2_set_no_ack_frame,
     point2_set_frame,
     point_pulse_width_set_frame,
@@ -55,6 +59,23 @@ def test_point2_set_no_ack_dual_voltage_frame():
     assert_equal(point2_set_no_ack_frame(1.5, 2.5), expected, "POINT2_SET_NO_ACK CH1/CH2 voltage frame")
 
 
+def test_point2_fifo_control_frames():
+    assert_equal(point2_fifo_clear_frame(), bytes.fromhex("A5 01 01 00 14"), "POINT2_FIFO_CLEAR frame")
+    assert_equal(point2_fifo_start_frame(), bytes.fromhex("A5 01 01 00 16"), "POINT2_FIFO_START frame")
+    assert_equal(point2_fifo_stop_frame(), bytes.fromhex("A5 01 01 00 17"), "POINT2_FIFO_STOP frame")
+
+
+def test_point2_fifo_append_two_points_frame():
+    expected = bytes.fromhex("A5 01 13 00 15 02 00")
+    expected += struct.pack("<f", 1.5) + struct.pack("<f", 2.5)
+    expected += struct.pack("<f", 1.25) + struct.pack("<f", 2.25)
+    assert_equal(
+        point2_fifo_append_frame([1.5, 1.25], [2.5, 2.25]),
+        expected,
+        "POINT2_FIFO_APPEND two points frame",
+    )
+
+
 def test_point_pulse_width_set_50us_frame():
     expected = bytes.fromhex("A5 01 05 00 50") + struct.pack("<f", 50.0)
     assert_equal(point_pulse_width_set_frame(50.0), expected, "POINT_PULSE_WIDTH_SET 50us frame")
@@ -91,6 +112,8 @@ def run_all():
         test_point_set_no_ack_ch1_1v5_frame,
         test_point2_set_dual_voltage_frame,
         test_point2_set_no_ack_dual_voltage_frame,
+        test_point2_fifo_control_frames,
+        test_point2_fifo_append_two_points_frame,
         test_point_pulse_width_set_50us_frame,
         test_timer_set_ch2_100khz_frame,
         test_waveform_config_ch2_256_points_12v5hz_frame,

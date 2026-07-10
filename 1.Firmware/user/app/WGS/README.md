@@ -127,14 +127,18 @@ POINT_SET    = 0x10
 POINT2_SET   = 0x11
 POINT_SET_NO_ACK  = 0x12
 POINT2_SET_NO_ACK = 0x13
-POINT2_FIFO_CLEAR  = 0x14
-POINT2_FIFO_APPEND = 0x15
-POINT2_FIFO_START  = 0x16
-POINT2_FIFO_STOP   = 0x17
-SEQUENCE_SET = 0x20
+POINT_FIFO_CLEAR   = 0x14
+POINT_FIFO_APPEND  = 0x15
+POINT_FIFO_START   = 0x16
+POINT_FIFO_STOP    = 0x17
+POINT2_FIFO_CLEAR  = 0x20
+POINT2_FIFO_APPEND = 0x21
+POINT2_FIFO_START  = 0x22
+POINT2_FIFO_STOP   = 0x23
 WAVEFORM_CONFIG = 0x30
 TIMER_SET    = 0x40
 POINT_PULSE_WIDTH_SET = 0x50
+SEQUENCE_SET = 0x60
 ```
 
 ## PING
@@ -235,6 +239,61 @@ offset  size  field
 有效的 `POINT2_SET_NO_ACK` 会执行与 `POINT2_SET` 相同的两路 DAC 更新和单点 armed 逻辑，但不会返回
 `ACK / DONE`、`ACK / BUSY` 或运行期 `NACK`。
 
+## POINT FIFO
+
+用途：把单通道单点轨迹预先缓存到固件 FIFO 中，再由 `EXT_PULSE_IN` 的每个上升沿消费一个点。该模式适合只扫描 CH1 或 CH2 的外部触发单点输出。
+
+固件 FIFO 深度为 `1024` 个单通道点。每个点包含一个 12 位 DAC code。上位机追加轨迹时仍发送电压，固件在解码阶段转换为 DAC code。当前实现一次只允许一个单通道 POINT FIFO 活跃；如果 FIFO 中已有 CH1 点，再向 CH2 追加会返回 `ACK / BUSY / NONE`。
+
+### POINT_FIFO_CLEAR
+
+```text
+offset  size  field
+0       1     command type = 0x14
+1       1     channel
+```
+
+清空单通道 FIFO，停止 POINT FIFO 外部触发输出，并取消已准备的单点脉冲。成功返回 `ACK / DONE / NONE`。
+
+### POINT_FIFO_APPEND
+
+```text
+offset  size  field
+0       1     command type = 0x15
+1       1     channel
+2       2     point_count, uint16 little-endian
+4       4*N   N * voltage float32_le
+```
+
+单帧最多追加 `1000` 个点，这是由当前协议最大 payload `4004 bytes` 决定的。若 FIFO 剩余空间不足以完整写入这一帧，固件返回 `ACK / BUSY / NONE`，不会写入这一批点；上位机应稍后重试。
+
+### POINT_FIFO_START
+
+```text
+offset  size  field
+0       1     command type = 0x16
+1       1     channel
+```
+
+开启对应通道的 FIFO 外部触发输出。开启后每个 `EXT_PULSE_IN` 上升沿：
+
+```text
+如果 FIFO 非空：pop 一个点 -> 更新对应 DAC -> 启动对应 TIM one-pulse
+如果 FIFO 为空：忽略该外部触发
+```
+
+### POINT_FIFO_STOP
+
+```text
+offset  size  field
+0       1     command type = 0x17
+1       1     channel
+```
+
+停止 POINT FIFO 外部触发输出并清空 FIFO。这样 stop 后不会残留旧轨迹。
+
+POINT FIFO 和 POINT2 FIFO 互斥。任一 FIFO active 期间，普通 `POINT_SET`、`POINT2_SET`、`POINT_PULSE_WIDTH_SET`、`SEQUENCE_SET`、`SYNC`、`WAVEFORM_CONFIG` 和 `TIMER_SET` 返回 `ACK / BUSY / NONE`。如需切换模式，先发送对应 FIFO 的 `STOP` 或 `CLEAR`。
+
 ## POINT2 FIFO
 
 用途：把双通道单点轨迹预先缓存到固件 FIFO 中，再由 `EXT_PULSE_IN` 的每个上升沿消费一个点。该模式用于外部触发频率接近或高于上位机逐点命令频率时，避免 `POINT2_SET_NO_ACK` 受 PC 命令到达相位影响。
@@ -245,7 +304,7 @@ offset  size  field
 
 ```text
 offset  size  field
-0       1     command type = 0x14
+0       1     command type = 0x20
 ```
 
 清空 FIFO，停止 FIFO 外部触发输出，并取消已准备的单点脉冲。成功返回 `ACK / DONE / NONE`。
@@ -254,7 +313,7 @@ offset  size  field
 
 ```text
 offset  size  field
-0       1     command type = 0x15
+0       1     command type = 0x21
 1       2     point_count, uint16 little-endian
 3       8*N   N * (ch1 voltage float32_le, ch2 voltage float32_le)
 ```
@@ -265,7 +324,7 @@ offset  size  field
 
 ```text
 offset  size  field
-0       1     command type = 0x16
+0       1     command type = 0x22
 ```
 
 开启 FIFO 外部触发输出。开启后每个 `EXT_PULSE_IN` 上升沿：
@@ -279,12 +338,12 @@ offset  size  field
 
 ```text
 offset  size  field
-0       1     command type = 0x17
+0       1     command type = 0x23
 ```
 
 停止 FIFO 外部触发输出并清空 FIFO。这样 stop 后不会残留旧轨迹。
 
-FIFO active 期间，`POINT_SET`、`POINT2_SET`、`POINT_PULSE_WIDTH_SET`、`SEQUENCE_SET`、`SYNC`、`WAVEFORM_CONFIG` 和 `TIMER_SET` 返回 `ACK / BUSY / NONE`。如需切换模式，先发送 `POINT2_FIFO_STOP` 或 `POINT2_FIFO_CLEAR`。
+POINT FIFO 和 POINT2 FIFO 互斥。任一 FIFO active 期间，`POINT_SET`、`POINT2_SET`、`POINT_PULSE_WIDTH_SET`、`SEQUENCE_SET`、`SYNC`、`WAVEFORM_CONFIG` 和 `TIMER_SET` 返回 `ACK / BUSY / NONE`。如需切换模式，先发送对应 FIFO 的 `STOP` 或 `CLEAR`。
 
 ## POINT_PULSE_WIDTH_SET
 
@@ -312,7 +371,7 @@ offset  size  field
 
 ```text
 offset  size      field
-0       1         command type = 0x20
+0       1         command type = 0x60
 1       1         channel
 2       2         sample count N, uint16 little-endian
 4       N * 4     voltage samples, float32 little-endian, unit = V
@@ -338,7 +397,7 @@ periodBuffer[N..active_length - 1] = periodBuffer[N - 1]
 
 ```text
 payload:
-20 02 02 00
+60 02 02 00
 33 33 D3 3F
 33 33 53 40
 ```

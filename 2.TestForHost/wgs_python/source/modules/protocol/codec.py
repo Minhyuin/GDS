@@ -49,6 +49,32 @@ def point2_set_no_ack_frame(ch1_voltage, ch2_voltage):
     return _point2_set_frame(CommandType.POINT2_SET_NO_ACK, ch1_voltage, ch2_voltage)
 
 
+def point_fifo_clear_frame(channel):
+    ch = normalize_channel(channel)
+    return build_frame(FrameType.COMMAND, bytes([CommandType.POINT_FIFO_CLEAR, ch]))
+
+
+def point_fifo_append_frame(channel, voltages):
+    ch = normalize_channel(channel)
+    values = [float(value) for value in voltages]
+    if not 1 <= len(values) <= 1000:
+        raise ValueError("POINT_FIFO_APPEND requires 1..1000 points")
+
+    payload = bytes([CommandType.POINT_FIFO_APPEND, ch]) + struct.pack("<H", len(values))
+    payload += b"".join(struct.pack("<f", value) for value in values)
+    return build_frame(FrameType.COMMAND, payload)
+
+
+def point_fifo_start_frame(channel):
+    ch = normalize_channel(channel)
+    return build_frame(FrameType.COMMAND, bytes([CommandType.POINT_FIFO_START, ch]))
+
+
+def point_fifo_stop_frame(channel):
+    ch = normalize_channel(channel)
+    return build_frame(FrameType.COMMAND, bytes([CommandType.POINT_FIFO_STOP, ch]))
+
+
 def point2_fifo_clear_frame():
     return build_frame(FrameType.COMMAND, bytes([CommandType.POINT2_FIFO_CLEAR]))
 

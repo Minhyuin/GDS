@@ -70,12 +70,34 @@ function test_wgs_protocol()
                "Expected WGS:BadPoint2Batch, got %s.", err.identifier);
     end
 
+    pointFifoClearPayload = uint8([C.CMD_POINT_FIFO_CLEAR, C.CHANNEL_1]);
+    pointFifoClearFrame = wgs.internal.buildFrame(C.FRAME_COMMAND, pointFifoClearPayload);
+    assertBytesEqual(pointFifoClearFrame, uint8([hex2dec("A5"), 1, 2, 0, hex2dec("14"), 1]));
+
+    pointFifoAppendPayload = wgs.internal.buildPointFifoAppendPayload(2, [1.5, 1.25]);
+    expectedPointFifoAppendPayload = uint8([ ...
+        hex2dec("15"), 2, 2, 0, ...
+        0, 0, hex2dec("C0"), hex2dec("3F"), ...
+        0, 0, hex2dec("A0"), hex2dec("3F")]);
+    assertBytesEqual(pointFifoAppendPayload, expectedPointFifoAppendPayload);
+    pointFifoAppendFrame = wgs.internal.buildFrame(C.FRAME_COMMAND, pointFifoAppendPayload);
+    assertBytesEqual(pointFifoAppendFrame, uint8([ ...
+        hex2dec("A5"), 1, hex2dec("0C"), 0, expectedPointFifoAppendPayload]));
+
+    pointFifoStartPayload = uint8([C.CMD_POINT_FIFO_START, C.CHANNEL_1]);
+    pointFifoStartFrame = wgs.internal.buildFrame(C.FRAME_COMMAND, pointFifoStartPayload);
+    assertBytesEqual(pointFifoStartFrame, uint8([hex2dec("A5"), 1, 2, 0, hex2dec("16"), 1]));
+
+    pointFifoStopPayload = uint8([C.CMD_POINT_FIFO_STOP, C.CHANNEL_1]);
+    pointFifoStopFrame = wgs.internal.buildFrame(C.FRAME_COMMAND, pointFifoStopPayload);
+    assertBytesEqual(pointFifoStopFrame, uint8([hex2dec("A5"), 1, 2, 0, hex2dec("17"), 1]));
+
     fifoClearFrame = wgs.internal.buildFrame(C.FRAME_COMMAND, uint8(C.CMD_POINT2_FIFO_CLEAR));
-    assertBytesEqual(fifoClearFrame, uint8([hex2dec("A5"), 1, 1, 0, hex2dec("14")]));
+    assertBytesEqual(fifoClearFrame, uint8([hex2dec("A5"), 1, 1, 0, hex2dec("20")]));
 
     fifoAppendPayload = wgs.internal.buildPoint2FifoAppendPayload([1.5, 1.25], [2.5, 2.25]);
     expectedFifoAppendPayload = uint8([ ...
-        hex2dec("15"), 2, 0, ...
+        hex2dec("21"), 2, 0, ...
         0, 0, hex2dec("C0"), hex2dec("3F"), ...
         0, 0, hex2dec("20"), hex2dec("40"), ...
         0, 0, hex2dec("A0"), hex2dec("3F"), ...
@@ -95,10 +117,10 @@ function test_wgs_protocol()
     end
 
     fifoStartFrame = wgs.internal.buildFrame(C.FRAME_COMMAND, uint8(C.CMD_POINT2_FIFO_START));
-    assertBytesEqual(fifoStartFrame, uint8([hex2dec("A5"), 1, 1, 0, hex2dec("16")]));
+    assertBytesEqual(fifoStartFrame, uint8([hex2dec("A5"), 1, 1, 0, hex2dec("22")]));
 
     fifoStopFrame = wgs.internal.buildFrame(C.FRAME_COMMAND, uint8(C.CMD_POINT2_FIFO_STOP));
-    assertBytesEqual(fifoStopFrame, uint8([hex2dec("A5"), 1, 1, 0, hex2dec("17")]));
+    assertBytesEqual(fifoStopFrame, uint8([hex2dec("A5"), 1, 1, 0, hex2dec("23")]));
 
     pulsePayload = [
         uint8(C.CMD_POINT_PULSE_WIDTH_SET), ...
@@ -118,6 +140,8 @@ function test_wgs_protocol()
     sequenceFrame = wgs.internal.buildFrame(C.FRAME_COMMAND, sequencePayload);
     assert(sequenceFrame(3) == 164 && sequenceFrame(4) == 15, ...
            "SEQUENCE_SET length bytes should be A4 0F for 1000 samples.");
+    assert(sequenceFrame(5) == hex2dec("60"), ...
+           "SEQUENCE_SET command byte should be 0x60.");
 
     timerPayload = [
         uint8(C.CMD_TIMER_SET), ...

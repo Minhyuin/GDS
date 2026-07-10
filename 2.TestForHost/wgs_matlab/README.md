@@ -164,6 +164,10 @@ reply.detailName   detail 文本，例如 NONE / INVALID_STATE
 | `client.point2Set` | `reply = client.point2Set(ch1Voltage, ch2Voltage)` | `ch1Voltage`, `ch2Voltage` | `reply` | 同一帧同时输出 CH1 / CH2 的目标电压。 |
 | `client.point2SetNoReply` / `client.point2SetNoAck` | `client.point2SetNoReply(ch1Voltage, ch2Voltage)` | `ch1Voltage`, `ch2Voltage` | 无 | 发送 `POINT2_SET_NO_ACK = 0x13`。适合高频双通道单点扫描，但不会逐帧确认固件状态。 |
 | `client.point2SetNoReplyBatch` / `client.point2SetNoAckBatch` | `stats = client.point2SetNoReplyBatch(ch1Voltages, ch2Voltages, name, value, ...)` | `ch1Voltages`, `ch2Voltages` | `stats` | 批量预构建连续 `POINT2_SET_NO_ACK` 帧，并按批次写入串口，避免 MATLAB 每点一次 `write()` 的约 1 kHz 调用瓶颈。 |
+| `client.pointFifoClear` | `reply = client.pointFifoClear(channel)` | `channel` | `reply` | 清空固件单通道 POINT FIFO，并停止该 FIFO 外部触发输出。 |
+| `client.pointFifoAppend` | `reply = client.pointFifoAppend(channel, voltages)` | `channel`, `voltages` | `reply` | 追加最多 1000 个单通道点到固件 POINT FIFO。FIFO 空间不足时固件返回 `ACK / BUSY / NONE`。 |
+| `client.pointFifoStart` | `reply = client.pointFifoStart(channel)` | `channel` | `reply` | 开启单通道 FIFO 外部触发输出。之后每个 `EXT_PULSE_IN` 上升沿消费一个 FIFO 点。 |
+| `client.pointFifoStop` | `reply = client.pointFifoStop(channel)` | `channel` | `reply` | 停止单通道 FIFO 外部触发输出并清空 FIFO，避免残留旧轨迹。 |
 | `client.point2FifoClear` | `reply = client.point2FifoClear()` | 无 | `reply` | 清空固件 POINT2 FIFO，并停止 FIFO 外部触发输出。 |
 | `client.point2FifoAppend` | `reply = client.point2FifoAppend(ch1Voltages, ch2Voltages)` | `ch1Voltages`, `ch2Voltages` | `reply` | 追加最多 500 个双通道点到固件 FIFO。FIFO 空间不足时固件返回 `ACK / BUSY / NONE`。 |
 | `client.point2FifoStart` | `reply = client.point2FifoStart()` | 无 | `reply` | 开启 FIFO 外部触发输出。之后每个 `EXT_PULSE_IN` 上升沿消费一个 FIFO 点。 |
@@ -294,24 +298,37 @@ POINT2_SET:
 POINT2_SET_NO_ACK:
   payload = 13 float32_le(ch1_voltage) float32_le(ch2_voltage)
 
+POINT_FIFO_CLEAR:
+  payload = 14 channel
+
+POINT_FIFO_APPEND:
+  payload = 15 channel uint16_le(point_count)
+            point_count * float32_le(voltage)
+
+POINT_FIFO_START:
+  payload = 16 channel
+
+POINT_FIFO_STOP:
+  payload = 17 channel
+
 POINT2_FIFO_CLEAR:
-  payload = 14
+  payload = 20
 
 POINT2_FIFO_APPEND:
-  payload = 15 uint16_le(point_count)
+  payload = 21 uint16_le(point_count)
             point_count * (float32_le(ch1_voltage) float32_le(ch2_voltage))
 
 POINT2_FIFO_START:
-  payload = 16
+  payload = 22
 
 POINT2_FIFO_STOP:
-  payload = 17
+  payload = 23
 
 POINT_PULSE_WIDTH_SET:
   payload = 50 float32_le(pulse_width_us)
 
 SEQUENCE_SET:
-  payload = 20 channel uint16_le(sampleCount)
+  payload = 60 channel uint16_le(sampleCount)
             sampleCount * float32_le(voltage)
 
 WAVEFORM_CONFIG:

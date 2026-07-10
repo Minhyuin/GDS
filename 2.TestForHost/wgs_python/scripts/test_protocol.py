@@ -8,6 +8,10 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 from source.modules.protocol.codec import (  # noqa: E402
     ping_frame,
+    point_fifo_append_frame,
+    point_fifo_clear_frame,
+    point_fifo_start_frame,
+    point_fifo_stop_frame,
     point_set_no_ack_frame,
     point_set_frame,
     point2_fifo_append_frame,
@@ -59,14 +63,31 @@ def test_point2_set_no_ack_dual_voltage_frame():
     assert_equal(point2_set_no_ack_frame(1.5, 2.5), expected, "POINT2_SET_NO_ACK CH1/CH2 voltage frame")
 
 
+def test_point_fifo_control_frames():
+    assert_equal(point_fifo_clear_frame("CH1"), bytes.fromhex("A5 01 02 00 14 01"), "POINT_FIFO_CLEAR CH1 frame")
+    assert_equal(point_fifo_start_frame("CH1"), bytes.fromhex("A5 01 02 00 16 01"), "POINT_FIFO_START CH1 frame")
+    assert_equal(point_fifo_stop_frame("CH1"), bytes.fromhex("A5 01 02 00 17 01"), "POINT_FIFO_STOP CH1 frame")
+
+
+def test_point_fifo_append_two_points_frame():
+    expected = bytes.fromhex("A5 01 0C 00 15 02 02 00")
+    expected += struct.pack("<f", 1.5)
+    expected += struct.pack("<f", 1.25)
+    assert_equal(
+        point_fifo_append_frame("CH2", [1.5, 1.25]),
+        expected,
+        "POINT_FIFO_APPEND CH2 two points frame",
+    )
+
+
 def test_point2_fifo_control_frames():
-    assert_equal(point2_fifo_clear_frame(), bytes.fromhex("A5 01 01 00 14"), "POINT2_FIFO_CLEAR frame")
-    assert_equal(point2_fifo_start_frame(), bytes.fromhex("A5 01 01 00 16"), "POINT2_FIFO_START frame")
-    assert_equal(point2_fifo_stop_frame(), bytes.fromhex("A5 01 01 00 17"), "POINT2_FIFO_STOP frame")
+    assert_equal(point2_fifo_clear_frame(), bytes.fromhex("A5 01 01 00 20"), "POINT2_FIFO_CLEAR frame")
+    assert_equal(point2_fifo_start_frame(), bytes.fromhex("A5 01 01 00 22"), "POINT2_FIFO_START frame")
+    assert_equal(point2_fifo_stop_frame(), bytes.fromhex("A5 01 01 00 23"), "POINT2_FIFO_STOP frame")
 
 
 def test_point2_fifo_append_two_points_frame():
-    expected = bytes.fromhex("A5 01 13 00 15 02 00")
+    expected = bytes.fromhex("A5 01 13 00 21 02 00")
     expected += struct.pack("<f", 1.5) + struct.pack("<f", 2.5)
     expected += struct.pack("<f", 1.25) + struct.pack("<f", 2.25)
     assert_equal(
@@ -101,7 +122,7 @@ def test_sequence_set_1000_points_frame_size():
     if len(frame) != expected_length:
         raise AssertionError(f"SEQUENCE_SET frame length expected {expected_length}, got {len(frame)}")
     assert_equal(frame[:4], bytes.fromhex("A5 01 A4 0F"), "SEQUENCE_SET header")
-    assert_equal(frame[4:8], bytes.fromhex("20 02 E8 03"), "SEQUENCE_SET payload prefix")
+    assert_equal(frame[4:8], bytes.fromhex("60 02 E8 03"), "SEQUENCE_SET payload prefix")
 
 
 def run_all():
@@ -112,6 +133,8 @@ def run_all():
         test_point_set_no_ack_ch1_1v5_frame,
         test_point2_set_dual_voltage_frame,
         test_point2_set_no_ack_dual_voltage_frame,
+        test_point_fifo_control_frames,
+        test_point_fifo_append_two_points_frame,
         test_point2_fifo_control_frames,
         test_point2_fifo_append_two_points_frame,
         test_point_pulse_width_set_50us_frame,

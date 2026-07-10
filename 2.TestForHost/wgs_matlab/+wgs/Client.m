@@ -89,6 +89,29 @@ classdef Client < handle
             stats = obj.point2SetNoReplyBatch(ch1Voltages, ch2Voltages, varargin{:});
         end
 
+        function reply = pointFifoClear(obj, channel)
+            C = wgs.internal.constants();
+            payload = uint8([C.CMD_POINT_FIFO_CLEAR, wgs.internal.channelByte(channel)]);
+            reply = obj.sendCommand(payload);
+        end
+
+        function reply = pointFifoAppend(obj, channel, voltages)
+            payload = wgs.internal.buildPointFifoAppendPayload(channel, voltages);
+            reply = obj.sendCommand(payload);
+        end
+
+        function reply = pointFifoStart(obj, channel)
+            C = wgs.internal.constants();
+            payload = uint8([C.CMD_POINT_FIFO_START, wgs.internal.channelByte(channel)]);
+            reply = obj.sendCommand(payload);
+        end
+
+        function reply = pointFifoStop(obj, channel)
+            C = wgs.internal.constants();
+            payload = uint8([C.CMD_POINT_FIFO_STOP, wgs.internal.channelByte(channel)]);
+            reply = obj.sendCommand(payload);
+        end
+
         function reply = point2FifoClear(obj)
             C = wgs.internal.constants();
             reply = obj.sendCommand(uint8(C.CMD_POINT2_FIFO_CLEAR));

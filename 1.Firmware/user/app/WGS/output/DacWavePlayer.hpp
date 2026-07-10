@@ -22,6 +22,7 @@ public:
   static constexpr float MAX_SAMPLE_RATE_HZ = 100000.0F; // 100k Sa/s
   static constexpr float MIN_POINT_PULSE_WIDTH_US = 1.0F;
   static constexpr float MAX_POINT_PULSE_WIDTH_US = 1000000.0F;
+  static constexpr size_t POINT_FIFO_CAPACITY = 1024;
   static constexpr size_t POINT2_FIFO_CAPACITY = 1024;
 
   DacWavePlayer() = default;
@@ -37,6 +38,7 @@ public:
     DMAch1Hardware::stopContinuous();
     DMAch2Hardware::stopContinuous();
     clearPointPulseState();
+    clearPointFifo();
     clearPoint2Fifo();
 
     if (DacHardware::setDacValue(DAC_CHANNEL_1, 0U) != HAL_OK) {
@@ -64,6 +66,7 @@ public:
     DMAch1Hardware::stopContinuous();
     DMAch2Hardware::stopContinuous();
     clearPointPulseState();
+    clearPointFifo();
     clearPoint2Fifo();
     sequencePlayingCh1_ = false;
     sequencePlayingCh2_ = false;
@@ -72,7 +75,7 @@ public:
 
   APP::WGS::PROTOCOL::Result_s reloadChannel(OutputChannel_e _channel,
                                              WaveformStore &_store) {
-    if (isPointPulseBusy() || isPoint2FifoActive()) {
+    if (isPointPulseBusy() || isPointFifoActive() || isPoint2FifoActive()) {
       return APP::WGS::PROTOCOL::Result_s::busy();
     }
 
@@ -94,7 +97,7 @@ public:
                                                  size_t _lengthSa,
                                                  float _frequencyHz,
                                                  WaveformStore &_store) {
-    if (isPointPulseBusy() || isPoint2FifoActive()) {
+    if (isPointPulseBusy() || isPointFifoActive() || isPoint2FifoActive()) {
       return APP::WGS::PROTOCOL::Result_s::busy();
     }
 
@@ -121,7 +124,7 @@ public:
   }
 
   APP::WGS::PROTOCOL::Result_s sync(WaveformStore &_store) {
-    if (isPointPulseBusy() || isPoint2FifoActive()) {
+    if (isPointPulseBusy() || isPointFifoActive() || isPoint2FifoActive()) {
       return APP::WGS::PROTOCOL::Result_s::busy();
     }
 
@@ -163,7 +166,7 @@ public:
   APP::WGS::PROTOCOL::Result_s holdChannel(OutputChannel_e _channel,
                                            uint16_t _sample,
                                            float _ackPulseUs) {
-    if (isPoint2FifoActive()) {
+    if (isPointFifoActive() || isPoint2FifoActive()) {
       return APP::WGS::PROTOCOL::Result_s::busy();
     }
 
@@ -197,7 +200,7 @@ public:
   APP::WGS::PROTOCOL::Result_s holdChannels(uint16_t _ch1Sample,
                                             uint16_t _ch2Sample,
                                             float _ackPulseUs) {
-    if (isPoint2FifoActive()) {
+    if (isPointFifoActive() || isPoint2FifoActive()) {
       return APP::WGS::PROTOCOL::Result_s::busy();
     }
 
@@ -247,7 +250,7 @@ public:
   }
 
   APP::WGS::PROTOCOL::Result_s setPointPulseWidth(float _pulseWidthUs) {
-    if (isPointPulseBusy() || isPoint2FifoActive()) {
+    if (isPointPulseBusy() || isPointFifoActive() || isPoint2FifoActive()) {
       return APP::WGS::PROTOCOL::Result_s::busy();
     }
 
@@ -266,7 +269,7 @@ public:
 
   APP::WGS::PROTOCOL::Result_s setSampleRate(OutputChannel_e _channel,
                                              float _sampleRateHz) {
-    if (isPointPulseBusy() || isPoint2FifoActive()) {
+    if (isPointPulseBusy() || isPointFifoActive() || isPoint2FifoActive()) {
       return APP::WGS::PROTOCOL::Result_s::busy();
     }
 
@@ -294,8 +297,112 @@ public:
     return (pendingPointPulseMask_ | firingPointPulseMask_) != 0U;
   }
 
+  bool isPointFifoActive() const {
+    return pointFifoEnabled_ || pointFifoCount_ != 0U;
+  }
+
   bool isPoint2FifoActive() const {
     return point2FifoEnabled_ || point2FifoCount_ != 0U;
+  }
+
+  APP::WGS::PROTOCOL::Result_s clearPointFifo() {
+    pointFifoEnabled_ = false;
+    clearPointPulseState();
+
+    const auto irqState = __get_PRIMASK();
+    __disable_irq();
+    pointFifoHead_ = 0;
+    pointFifoTail_ = 0;
+    pointFifoCount_ = 0;
+    if (irqState == 0U) {
+      __enable_irq();
+    }
+    return APP::WGS::PROTOCOL::Result_s::success();
+  }
+
+  APP::WGS::PROTOCOL::Result_s clearPointFifo(OutputChannel_e) {
+    return clearPointFifo();
+  }
+
+  APP::WGS::PROTOCOL::Result_s stopPointFifo(OutputChannel_e) {
+    return clearPointFifo();
+  }
+
+  APP::WGS::PROTOCOL::Result_s appendPointFifo(
+      OutputChannel_e _channel,
+      std::span<const APP::WGS::PROTOCOL::PointFifoPoint_s> _points) {
+    if (_points.empty() || _points.size() > POINT_FIFO_CAPACITY) {
+      return APP::WGS::PROTOCOL::Result_s::fail(
+          APP::WGS::PROTOCOL::ErrorCode_e::BAD_LENGTH);
+    }
+    if (isPoint2FifoActive()) {
+      return APP::WGS::PROTOCOL::Result_s::busy();
+    }
+
+    size_t writeIndex = 0;
+    {
+      const auto irqState = __get_PRIMASK();
+      __disable_irq();
+      if (pointFifoCount_ != 0U && _channel != pointFifoChannel_) {
+        if (irqState == 0U) {
+          __enable_irq();
+        }
+        return APP::WGS::PROTOCOL::Result_s::busy();
+      }
+      const size_t freeCount = POINT_FIFO_CAPACITY - pointFifoCount_;
+      if (_points.size() > freeCount) {
+        if (irqState == 0U) {
+          __enable_irq();
+        }
+        return APP::WGS::PROTOCOL::Result_s::busy();
+      }
+      pointFifoChannel_ = _channel;
+      writeIndex = pointFifoTail_;
+      if (irqState == 0U) {
+        __enable_irq();
+      }
+    }
+
+    for (auto point : _points) {
+      pointFifo_[writeIndex] = point;
+      writeIndex = nextPointFifoIndex(writeIndex);
+    }
+
+    const auto irqState = __get_PRIMASK();
+    __disable_irq();
+    pointFifoTail_ = writeIndex;
+    pointFifoCount_ = pointFifoCount_ + _points.size();
+    if (irqState == 0U) {
+      __enable_irq();
+    }
+
+    return APP::WGS::PROTOCOL::Result_s::success();
+  }
+
+  APP::WGS::PROTOCOL::Result_s startPointFifo(OutputChannel_e _channel) {
+    if (isPointPulseBusy() || isPoint2FifoActive()) {
+      return APP::WGS::PROTOCOL::Result_s::busy();
+    }
+    if (pointFifoCount_ != 0U && pointFifoChannel_ != _channel) {
+      return APP::WGS::PROTOCOL::Result_s::busy();
+    }
+
+    if (DacHardware::stopDma(dacChannel(_channel)) != HAL_OK) {
+      return fail();
+    }
+    stopTimer(_channel);
+    setSequencePlaying(_channel, false);
+    if (DacHardware::startDac(dacChannel(_channel)) != HAL_OK) {
+      return fail();
+    }
+    if (preparePointPulse(_channel, pointPulseWidthUs_) != HAL_OK) {
+      return fail();
+    }
+
+    pointFifoChannel_ = _channel;
+    pointFifoEnabled_ = true;
+    state_ = PlayerState_e::READY;
+    return APP::WGS::PROTOCOL::Result_s::success();
   }
 
   APP::WGS::PROTOCOL::Result_s clearPoint2Fifo() {
@@ -322,6 +429,9 @@ public:
     if (_points.empty() || _points.size() > POINT2_FIFO_CAPACITY) {
       return APP::WGS::PROTOCOL::Result_s::fail(
           APP::WGS::PROTOCOL::ErrorCode_e::BAD_LENGTH);
+    }
+    if (isPointFifoActive()) {
+      return APP::WGS::PROTOCOL::Result_s::busy();
     }
 
     size_t writeIndex = 0;
@@ -358,7 +468,7 @@ public:
   }
 
   APP::WGS::PROTOCOL::Result_s startPoint2Fifo() {
-    if (isPointPulseBusy()) {
+    if (isPointPulseBusy() || isPointFifoActive()) {
       return APP::WGS::PROTOCOL::Result_s::busy();
     }
 
@@ -395,6 +505,9 @@ public:
     if (firePoint2FifoFromIsr()) {
       return;
     }
+    if (firePointFifoFromIsr()) {
+      return;
+    }
 
     uint8_t mask = POINT_PULSE_NONE;
 
@@ -425,9 +538,9 @@ public:
     const bool completed =
         _channel == OutputChannel_e::CH1
             ? DMAch1Hardware::completePreparedSinglePulseFromIsr(
-                  point2FifoEnabled_)
+                  point2FifoEnabled_ || pointFifoEnabled_)
             : DMAch2Hardware::completePreparedSinglePulseFromIsr(
-                  point2FifoEnabled_);
+                  point2FifoEnabled_ || pointFifoEnabled_);
     if (completed || (firingPointPulseMask_ & mask) != 0U) {
       clearFiringPointPulseMask(mask);
     }
@@ -439,6 +552,11 @@ private:
   static constexpr uint8_t POINT_PULSE_CH2 = 0x02U;
   static constexpr uint8_t POINT_PULSE_BOTH =
       POINT_PULSE_CH1 | POINT_PULSE_CH2;
+
+  static size_t nextPointFifoIndex(size_t _index) {
+    ++_index;
+    return _index >= POINT_FIFO_CAPACITY ? 0U : _index;
+  }
 
   static size_t nextPoint2FifoIndex(size_t _index) {
     ++_index;
@@ -564,6 +682,47 @@ private:
     firingPointPulseMask_ = POINT_PULSE_NONE;
   }
 
+  bool popPointFifoFromIsr(APP::WGS::PROTOCOL::PointFifoPoint_s &_point) {
+    if (pointFifoCount_ == 0U) {
+      return false;
+    }
+
+    _point = pointFifo_[pointFifoHead_];
+    pointFifoHead_ = nextPointFifoIndex(pointFifoHead_);
+    pointFifoCount_ = pointFifoCount_ - 1U;
+    return true;
+  }
+
+  bool firePointFifoFromIsr() {
+    if (!pointFifoEnabled_) {
+      return false;
+    }
+    if (firingPointPulseMask_ != POINT_PULSE_NONE) {
+      return true;
+    }
+
+    APP::WGS::PROTOCOL::PointFifoPoint_s point{};
+    if (!popPointFifoFromIsr(point)) {
+      return true;
+    }
+
+    const uint32_t dac = dacChannel(pointFifoChannel_);
+    if (DacHardware::setDacValue(dac, point.sample.value) != HAL_OK) {
+      return true;
+    }
+
+    const uint8_t mask = pointPulseMask(pointFifoChannel_);
+    firingPointPulseMask_ = mask;
+    const HAL_StatusTypeDef status =
+        pointFifoChannel_ == OutputChannel_e::CH1
+            ? DMAch1Hardware::firePreparedSinglePulseFromIsr()
+            : DMAch2Hardware::firePreparedSinglePulseFromIsr();
+    if (status != HAL_OK) {
+      clearFiringPointPulseMask(mask);
+    }
+    return true;
+  }
+
   bool popPoint2FifoFromIsr(APP::WGS::PROTOCOL::Point2FifoPoint_s &_point) {
     if (point2FifoCount_ == 0U) {
       return false;
@@ -619,6 +778,13 @@ private:
   float pointPulseWidthUs_{APP::WGS::PROTOCOL::POINT_PULSE_WIDTH_DEFAULT_US};
   volatile uint8_t pendingPointPulseMask_{POINT_PULSE_NONE};
   volatile uint8_t firingPointPulseMask_{POINT_PULSE_NONE};
+  std::array<APP::WGS::PROTOCOL::PointFifoPoint_s, POINT_FIFO_CAPACITY>
+      pointFifo_{};
+  volatile bool pointFifoEnabled_{false};
+  OutputChannel_e pointFifoChannel_{OutputChannel_e::CH1};
+  volatile size_t pointFifoHead_{0};
+  volatile size_t pointFifoTail_{0};
+  volatile size_t pointFifoCount_{0};
   std::array<APP::WGS::PROTOCOL::Point2FifoPoint_s, POINT2_FIFO_CAPACITY>
       point2Fifo_{};
   volatile bool point2FifoEnabled_{false};

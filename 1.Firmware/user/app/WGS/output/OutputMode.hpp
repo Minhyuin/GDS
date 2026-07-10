@@ -69,7 +69,8 @@ public:
       return APP::WGS::PROTOCOL::Result_s::fail(
           APP::WGS::PROTOCOL::ErrorCode_e::INVALID_STATE);
     }
-    if (_ctx.player->isPointPulseBusy() || _ctx.player->isPoint2FifoActive()) {
+    if (_ctx.player->isPointPulseBusy() || _ctx.player->isPointFifoActive() ||
+        _ctx.player->isPoint2FifoActive()) {
       return APP::WGS::PROTOCOL::Result_s::busy();
     }
 
@@ -88,7 +89,7 @@ public:
       return APP::WGS::PROTOCOL::Result_s::fail(
           APP::WGS::PROTOCOL::ErrorCode_e::INVALID_STATE);
     }
-    if (_ctx.player->isPoint2FifoActive()) {
+    if (_ctx.player->isPointFifoActive() || _ctx.player->isPoint2FifoActive()) {
       return APP::WGS::PROTOCOL::Result_s::busy();
     }
 
@@ -109,7 +110,7 @@ public:
       return APP::WGS::PROTOCOL::Result_s::fail(
           APP::WGS::PROTOCOL::ErrorCode_e::INVALID_STATE);
     }
-    if (_ctx.player->isPoint2FifoActive()) {
+    if (_ctx.player->isPointFifoActive() || _ctx.player->isPoint2FifoActive()) {
       return APP::WGS::PROTOCOL::Result_s::busy();
     }
 
@@ -124,11 +125,76 @@ public:
 
   APP::WGS::PROTOCOL::Result_s
   handle(OutputContext_s<Player_s> &_ctx,
+         const APP::WGS::PROTOCOL::PointFifoClearCommand_s &_cmd) {
+    if (_ctx.player == nullptr) {
+      _ctx.state = OutputState_e::FAULT;
+      return APP::WGS::PROTOCOL::Result_s::fail(
+          APP::WGS::PROTOCOL::ErrorCode_e::INVALID_STATE);
+    }
+    if (_ctx.player->isPoint2FifoActive()) {
+      return APP::WGS::PROTOCOL::Result_s::busy();
+    }
+
+    return _ctx.player->clearPointFifo(toOutputChannel(_cmd.channel));
+  }
+
+  APP::WGS::PROTOCOL::Result_s
+  handle(OutputContext_s<Player_s> &_ctx,
+         const APP::WGS::PROTOCOL::PointFifoAppendCommand_s &_cmd) {
+    if (_ctx.player == nullptr) {
+      _ctx.state = OutputState_e::FAULT;
+      return APP::WGS::PROTOCOL::Result_s::fail(
+          APP::WGS::PROTOCOL::ErrorCode_e::INVALID_STATE);
+    }
+    if (_ctx.player->isPoint2FifoActive()) {
+      return APP::WGS::PROTOCOL::Result_s::busy();
+    }
+
+    return _ctx.player->appendPointFifo(toOutputChannel(_cmd.channel),
+                                        _cmd.points);
+  }
+
+  APP::WGS::PROTOCOL::Result_s
+  handle(OutputContext_s<Player_s> &_ctx,
+         const APP::WGS::PROTOCOL::PointFifoStartCommand_s &_cmd) {
+    if (_ctx.player == nullptr) {
+      _ctx.state = OutputState_e::FAULT;
+      return APP::WGS::PROTOCOL::Result_s::fail(
+          APP::WGS::PROTOCOL::ErrorCode_e::INVALID_STATE);
+    }
+    if (_ctx.player->isPoint2FifoActive()) {
+      return APP::WGS::PROTOCOL::Result_s::busy();
+    }
+
+    return _ctx.player->startPointFifo(toOutputChannel(_cmd.channel));
+  }
+
+  APP::WGS::PROTOCOL::Result_s
+  handle(OutputContext_s<Player_s> &_ctx,
+         const APP::WGS::PROTOCOL::PointFifoStopCommand_s &_cmd) {
+    if (_ctx.player == nullptr) {
+      _ctx.state = OutputState_e::FAULT;
+      return APP::WGS::PROTOCOL::Result_s::fail(
+          APP::WGS::PROTOCOL::ErrorCode_e::INVALID_STATE);
+    }
+    if (_ctx.player->isPoint2FifoActive()) {
+      return APP::WGS::PROTOCOL::Result_s::busy();
+    }
+
+    return _ctx.player->stopPointFifo(toOutputChannel(_cmd.channel));
+  }
+
+  APP::WGS::PROTOCOL::Result_s
+  handle(OutputContext_s<Player_s> &_ctx,
          const APP::WGS::PROTOCOL::Point2FifoClearCommand_s &) {
     if (_ctx.player == nullptr) {
       _ctx.state = OutputState_e::FAULT;
       return APP::WGS::PROTOCOL::Result_s::fail(
           APP::WGS::PROTOCOL::ErrorCode_e::INVALID_STATE);
+    }
+
+    if (_ctx.player->isPointFifoActive()) {
+      return APP::WGS::PROTOCOL::Result_s::busy();
     }
 
     return _ctx.player->clearPoint2Fifo();
@@ -143,6 +209,10 @@ public:
           APP::WGS::PROTOCOL::ErrorCode_e::INVALID_STATE);
     }
 
+    if (_ctx.player->isPointFifoActive()) {
+      return APP::WGS::PROTOCOL::Result_s::busy();
+    }
+
     return _ctx.player->appendPoint2Fifo(_cmd.points);
   }
 
@@ -153,6 +223,10 @@ public:
       _ctx.state = OutputState_e::FAULT;
       return APP::WGS::PROTOCOL::Result_s::fail(
           APP::WGS::PROTOCOL::ErrorCode_e::INVALID_STATE);
+    }
+
+    if (_ctx.player->isPointFifoActive()) {
+      return APP::WGS::PROTOCOL::Result_s::busy();
     }
 
     return _ctx.player->startPoint2Fifo();
@@ -167,6 +241,10 @@ public:
           APP::WGS::PROTOCOL::ErrorCode_e::INVALID_STATE);
     }
 
+    if (_ctx.player->isPointFifoActive()) {
+      return APP::WGS::PROTOCOL::Result_s::busy();
+    }
+
     return _ctx.player->stopPoint2Fifo();
   }
 
@@ -178,7 +256,8 @@ public:
       return APP::WGS::PROTOCOL::Result_s::fail(
           APP::WGS::PROTOCOL::ErrorCode_e::INVALID_STATE);
     }
-    if (_ctx.player->isPointPulseBusy() || _ctx.player->isPoint2FifoActive()) {
+    if (_ctx.player->isPointPulseBusy() || _ctx.player->isPointFifoActive() ||
+        _ctx.player->isPoint2FifoActive()) {
       return APP::WGS::PROTOCOL::Result_s::busy();
     }
 
@@ -193,7 +272,8 @@ public:
       return APP::WGS::PROTOCOL::Result_s::fail(
           APP::WGS::PROTOCOL::ErrorCode_e::INVALID_STATE);
     }
-    if (_ctx.player->isPointPulseBusy() || _ctx.player->isPoint2FifoActive()) {
+    if (_ctx.player->isPointPulseBusy() || _ctx.player->isPointFifoActive() ||
+        _ctx.player->isPoint2FifoActive()) {
       return APP::WGS::PROTOCOL::Result_s::busy();
     }
 
@@ -223,7 +303,8 @@ public:
       return APP::WGS::PROTOCOL::Result_s::fail(
           APP::WGS::PROTOCOL::ErrorCode_e::INVALID_STATE);
     }
-    if (_ctx.player->isPointPulseBusy() || _ctx.player->isPoint2FifoActive()) {
+    if (_ctx.player->isPointPulseBusy() || _ctx.player->isPointFifoActive() ||
+        _ctx.player->isPoint2FifoActive()) {
       return APP::WGS::PROTOCOL::Result_s::busy();
     }
 
@@ -240,7 +321,8 @@ public:
       return APP::WGS::PROTOCOL::Result_s::fail(
           APP::WGS::PROTOCOL::ErrorCode_e::INVALID_STATE);
     }
-    if (_ctx.player->isPointPulseBusy() || _ctx.player->isPoint2FifoActive()) {
+    if (_ctx.player->isPointPulseBusy() || _ctx.player->isPointFifoActive() ||
+        _ctx.player->isPoint2FifoActive()) {
       return APP::WGS::PROTOCOL::Result_s::busy();
     }
 

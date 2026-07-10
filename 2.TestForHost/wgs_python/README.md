@@ -96,24 +96,37 @@ POINT2_SET:
 POINT2_SET_NO_ACK:
   13 float32_le(ch1_voltage) float32_le(ch2_voltage)
 
+POINT_FIFO_CLEAR:
+  14 channel
+
+POINT_FIFO_APPEND:
+  15 channel uint16_le(point_count)
+     point_count * float32_le(voltage)
+
+POINT_FIFO_START:
+  16 channel
+
+POINT_FIFO_STOP:
+  17 channel
+
 POINT2_FIFO_CLEAR:
-  14
+  20
 
 POINT2_FIFO_APPEND:
-  15 uint16_le(point_count)
+  21 uint16_le(point_count)
      point_count * (float32_le(ch1_voltage) float32_le(ch2_voltage))
 
 POINT2_FIFO_START:
-  16
+  22
 
 POINT2_FIFO_STOP:
-  17
+  23
 
 POINT_PULSE_WIDTH_SET:
   50 float32_le(pulse_width_us)
 
 SEQUENCE_SET:
-  20 channel uint16_le(sample_count) sample_count * float32_le(voltage)
+  60 channel uint16_le(sample_count) sample_count * float32_le(voltage)
 
 WAVEFORM_CONFIG:
   30 channel uint16_le(length_sa) float32_le(frequency_hz)
@@ -156,6 +169,8 @@ python scripts/test_protocol.py
 - `POINT_SET_NO_ACK CH1 1.5V` 帧
 - `POINT2_SET CH1 1.5V CH2 2.5V` 帧
 - `POINT2_SET_NO_ACK CH1 1.5V CH2 2.5V` 帧
+- `POINT_FIFO_CLEAR / START / STOP` 帧
+- `POINT_FIFO_APPEND` 两点帧
 - `POINT2_FIFO_CLEAR / START / STOP` 帧
 - `POINT2_FIFO_APPEND` 两点帧
 - `POINT_PULSE_WIDTH_SET 50us` 帧
@@ -177,6 +192,10 @@ try:
     client.point_set_no_reply("CH1", 1.65)      # sends POINT_SET_NO_ACK, no firmware reply
     client.point2_set_no_reply(1.65, 2.50)      # sends POINT2_SET_NO_ACK, no firmware reply
     print(client.point_pulse_width_set(50.0).summary())
+    print(client.point_fifo_clear("CH1").summary())
+    print(client.point_fifo_append("CH1", [1.50, 1.55]).summary())
+    print(client.point_fifo_start("CH1").summary())
+    print(client.point_fifo_stop("CH1").summary())    # STOP also clears queued FIFO points
     print(client.point2_fifo_clear().summary())
     print(client.point2_fifo_append([1.50, 1.55], [2.50, 2.45]).summary())
     print(client.point2_fifo_start().summary())
@@ -189,6 +208,7 @@ finally:
 ## 注意事项
 
 - `sequence_set(channel, samples, frequency_hz)` 会先发送 `WAVEFORM_CONFIG` 配置波形长度和频率，再发送 `SEQUENCE_SET`。
+- `POINT_FIFO_APPEND` 单帧最多追加 1000 个单通道点；固件 FIFO 深度为 1024 个点。POINT FIFO 和 POINT2 FIFO 互斥。
 - `POINT2_FIFO_APPEND` 单帧最多追加 500 个双通道点；固件 FIFO 深度为 1024 个点。FIFO 启动后，每个 `EXT_PULSE_IN` 上升沿消耗一个点、更新 CH1/CH2 DAC，并输出两个通道的单点脉冲。
 - `POINT2_FIFO_STOP` 会停止 FIFO 并清空未消费的点；上位机发送完点列不代表外部脉冲已经消费完 FIFO，因此通常需要按外部触发频率估算等待时间后再 STOP。
 - 波形长度最大 1000 Sa，采样率 `length * frequency` 最高 100000 Sa/s。

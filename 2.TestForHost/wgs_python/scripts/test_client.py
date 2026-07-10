@@ -185,6 +185,36 @@ def test_client_point2_set_no_ack_alias_sends_no_ack_command_without_reading():
         raise AssertionError("point2_set_no_ack() should not read a firmware reply")
 
 
+def test_client_point_fifo_methods_send_control_and_append_frames():
+    original_transport = wgs_client.SerialTransport
+    wgs_client.SerialTransport = FakeTransport
+    try:
+        client = wgs_client.WgsClient("COM_TEST")
+        clear_reply = client.point_fifo_clear("CH1")
+        append_reply = client.point_fifo_append("CH2", [1.5, 1.25])
+        start_reply = client.point_fifo_start("CH1")
+        stop_reply = client.point_fifo_stop("CH1")
+        writes = list(client.transport.writes)
+    finally:
+        wgs_client.SerialTransport = original_transport
+
+    expected_append = bytes.fromhex("A5 01 0C 00 15 02 02 00")
+    expected_append += struct.pack("<f", 1.5) + struct.pack("<f", 1.25)
+    expected = [
+        bytes.fromhex("A5 01 02 00 14 01"),
+        expected_append,
+        bytes.fromhex("A5 01 02 00 16 01"),
+        bytes.fromhex("A5 01 02 00 17 01"),
+    ]
+    if writes != expected:
+        actual = [item.hex(" ").upper() for item in writes]
+        expected_hex = [item.hex(" ").upper() for item in expected]
+        raise AssertionError(f"POINT FIFO methods should send FIFO frames\nexpected: {expected_hex}\nactual:   {actual}")
+    for reply in [clear_reply, append_reply, start_reply, stop_reply]:
+        if not reply.ok:
+            raise AssertionError(f"POINT FIFO method should return OK ACK, got {reply.summary()}")
+
+
 def test_client_point2_fifo_methods_send_control_and_append_frames():
     original_transport = wgs_client.SerialTransport
     wgs_client.SerialTransport = FakeTransport
@@ -198,14 +228,14 @@ def test_client_point2_fifo_methods_send_control_and_append_frames():
     finally:
         wgs_client.SerialTransport = original_transport
 
-    expected_append = bytes.fromhex("A5 01 13 00 15 02 00")
+    expected_append = bytes.fromhex("A5 01 13 00 21 02 00")
     expected_append += struct.pack("<f", 1.5) + struct.pack("<f", 2.5)
     expected_append += struct.pack("<f", 1.25) + struct.pack("<f", 2.25)
     expected = [
-        bytes.fromhex("A5 01 01 00 14"),
+        bytes.fromhex("A5 01 01 00 20"),
         expected_append,
-        bytes.fromhex("A5 01 01 00 16"),
-        bytes.fromhex("A5 01 01 00 17"),
+        bytes.fromhex("A5 01 01 00 22"),
+        bytes.fromhex("A5 01 01 00 23"),
     ]
     if writes != expected:
         actual = [item.hex(" ").upper() for item in writes]
@@ -247,7 +277,7 @@ def test_client_sequence_set_configures_length_and_frequency_first():
         wgs_client.SerialTransport = original_transport
 
     expected_config = bytes.fromhex("A5 01 08 00 30 02 03 00") + struct.pack("<f", 10.0)
-    expected_sequence = bytes.fromhex("A5 01 10 00 20 02 03 00")
+    expected_sequence = bytes.fromhex("A5 01 10 00 60 02 03 00")
     expected_sequence += struct.pack("<f", 1.0) + struct.pack("<f", 2.0) + struct.pack("<f", 3.0)
     if writes != [expected_config, expected_sequence]:
         actual = [item.hex(" ").upper() for item in writes]
@@ -266,6 +296,7 @@ def run_all():
         test_client_point2_set_sends_dual_voltage_frame,
         test_client_point2_set_no_reply_sends_no_ack_command_without_reading,
         test_client_point2_set_no_ack_alias_sends_no_ack_command_without_reading,
+        test_client_point_fifo_methods_send_control_and_append_frames,
         test_client_point2_fifo_methods_send_control_and_append_frames,
         test_client_point_pulse_width_set_sends_global_width,
         test_client_sequence_set_configures_length_and_frequency_first,

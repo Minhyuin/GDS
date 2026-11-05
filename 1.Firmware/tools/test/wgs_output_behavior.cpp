@@ -16,14 +16,16 @@ void require(bool b, const char *s) {
 struct T1 {
   static inline TIM_TypeDef reg;
   static inline TIM_HandleTypeDef h{&reg};
-  static TIM_HandleTypeDef &handle() { return h; }
+  static inline unsigned handleCalls{};
+  static TIM_HandleTypeDef &handle() { ++handleCalls; return h; }
   static constexpr auto ACK_CHANNEL_1 = TIM_CHANNEL_1,
                         ACK_CHANNEL_2 = TIM_CHANNEL_2;
 };
 struct T2 {
   static inline TIM_TypeDef reg;
   static inline TIM_HandleTypeDef h{&reg};
-  static TIM_HandleTypeDef &handle() { return h; }
+  static inline unsigned handleCalls{};
+  static TIM_HandleTypeDef &handle() { ++handleCalls; return h; }
   static constexpr auto ACK_CHANNEL_1 = TIM_CHANNEL_3,
                         ACK_CHANNEL_2 = TIM_CHANNEL_4;
 };
@@ -60,7 +62,13 @@ template <typename Timer, typename Provider> void checkSinglePulseEdges() {
     auto saved1 = Provider::reg.CCMR1, saved2 = Provider::reg.CCMR2;
     require(Timer::prepareSinglePulse(width) == HAL_OK, "pulse prepare failed");
     for (int repeat = 0; repeat < 2; ++repeat) {
+      require(!(Provider::reg.CR1 & TIM_CR1_CEN), "prepared pulse started early");
+      require((Provider::reg.CCER & 0x1111U) == 0,
+              "prepared pulse enabled outputs before external trigger");
+      const auto handleCalls = Provider::handleCalls;
       require(Timer::firePreparedSinglePulseFromIsr() == HAL_OK, "pulse fire failed");
+      require(Provider::handleCalls == handleCalls,
+              "trigger path still resolves timer handle instead of prepared registers");
       const auto channel = Provider::ACK_CHANNEL_1;
       const auto ccmr = channel < TIM_CHANNEL_3 ? Provider::reg.CCMR1 : Provider::reg.CCMR2;
       const auto shift = channel == TIM_CHANNEL_1 || channel == TIM_CHANNEL_3 ? 0 : 8;
@@ -80,6 +88,8 @@ template <typename Timer, typename Provider> void checkSinglePulseEdges() {
       require(rises == 1 && falls == 1 && !previous,
               "ACK rises again at overflow before completion ISR");
       require(highTicks == Provider::reg.ARR, "single pulse high width changed");
+      Provider::reg.CNT = 0;
+      Provider::reg.CR1 &= ~TIM_CR1_CEN; // OPM clears CEN on hardware overflow.
       Timer::completePreparedSinglePulseFromIsr(true);
     }
     Timer::cancelPreparedSinglePulse();

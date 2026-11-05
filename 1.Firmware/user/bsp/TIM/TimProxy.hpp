@@ -69,6 +69,7 @@ public:
 
     timer().Instance->EGR = TIM_EGR_UG;
     clearUpdateFlag();
+    preparePulseStart();
     return HAL_OK;
   }
 
@@ -77,15 +78,9 @@ public:
       return HAL_ERROR;
     }
 
-    // Resolve the handle once on the external-trigger path.
-    auto &handle = timer();
-    auto *registers = handle.Instance;
-    registers->SR = ~TIM_FLAG_UPDATE;
-    registers->DIER |= TIM_DIER_UIE;
-    handle.State = HAL_TIM_STATE_BUSY;
+    auto *registers = singlePulseRegisters_;
     singlePulseFiring_ = true;
-    registers->CCER |= channelEnableBit(HandleProvider::ACK_CHANNEL_1) |
-                       channelEnableBit(HandleProvider::ACK_CHANNEL_2);
+    registers->CCER = singlePulseOutputEnable_;
     registers->CR1 |= TIM_CR1_CEN;
     return HAL_OK;
   }
@@ -105,9 +100,12 @@ public:
       singlePulsePrepared_ = false;
     } else {
       resetCounter();
+      preparePulseStart();
     }
     singlePulseFiring_ = false;
-    timer().State = HAL_TIM_STATE_READY;
+    if (!_keepPrepared) {
+      timer().State = HAL_TIM_STATE_READY;
+    }
     return true;
   }
 
@@ -220,6 +218,21 @@ private:
   static inline TimerConfig_s singlePulseRestoreConfig_{};
   static inline bool singlePulsePrepared_{false};
   static inline bool singlePulseFiring_{false};
+  static inline TIM_TypeDef *singlePulseRegisters_{};
+  static inline uint32_t singlePulseOutputEnable_{};
+
+  static void preparePulseStart() {
+    auto &handle = timer();
+    singlePulseRegisters_ = handle.Instance;
+    // Keep outputs disabled until the external trigger; cache the enable value.
+    singlePulseOutputEnable_ =
+        singlePulseRegisters_->CCER |
+        channelEnableBit(HandleProvider::ACK_CHANNEL_1) |
+        channelEnableBit(HandleProvider::ACK_CHANNEL_2);
+    handle.State = HAL_TIM_STATE_BUSY;
+    singlePulseRegisters_->SR = ~TIM_FLAG_UPDATE;
+    singlePulseRegisters_->DIER |= TIM_DIER_UIE;
+  }
 
   static TimerConfig_s captureConfig() {
     return TimerConfig_s{

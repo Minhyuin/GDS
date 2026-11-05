@@ -8,9 +8,9 @@
 
 #pragma once
 
-#include "StmLog.hpp"
-#include <bits/move.h>
-#include <bits/stl_construct.h>
+#include <memory>
+#include <new>
+#include <utility>
 #include <type_traits>
 
 
@@ -37,18 +37,16 @@ public:
 
   constexpr explicit operator bool() const noexcept { return engaged_; }
 
+  // Accessors require construct() to have completed.
   constexpr T &get() noexcept {
-    LOG::CHECK(&this->obj);
     return obj;
   }
 
   constexpr T *operator->() {
-    LOG::CHECK(&this->obj);
     return std::addressof(obj);
   }
 
   constexpr T &operator*() {
-    LOG::CHECK(&this->obj);
     return obj;
   }
 

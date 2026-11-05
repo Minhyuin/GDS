@@ -23,8 +23,8 @@ public:
   WGSManager();
 
   PROTOCOL::Result_s init();
-  void notifyRxFromIsr();
-  void onTxCompleteFromIsr();
+  void onRxEventFromIsr(uint16_t _position);
+  void onRxErrorFromIsr();
   void onDacDmaHalfCompleteFromIsr();
   void onDacDmaCompleteFromIsr();
   void onExternalPointTriggerFromIsr();
@@ -45,7 +45,7 @@ private:
   using DacPlayer = OUTPUT::DacWavePlayer<BSP::DacProxy, Tim4, Tim5>;
 
   using ProtocolService =
-      COMM::ProtocolService<Transport, Parser, PROTOCOL::GdsFrameV1Policy_s>;
+      COMM::ProtocolService<Transport, PROTOCOL::GdsFrameV1Policy_s>;
   using OutputController = OUTPUT::OutputController<DacPlayer>;
 
   static void taskEntry(void *_argument);
@@ -53,6 +53,8 @@ private:
   PROTOCOL::Result_s startTask();
   void taskLoop();
   void processRx();
+  PROTOCOL::Result_s recoverRx();
+  void notifyTaskFromIsr();
   void handleFrame(const PROTOCOL::Frame_s &_frame);
   PROTOCOL::Result_s decodeCommand(const PROTOCOL::Frame_s &_frame,
                                    PROTOCOL::Command_v &_command);
@@ -78,8 +80,8 @@ private:
 
 } // namespace APP::WGS
 
-extern "C" void notifyWgsRxFromIsr();
-extern "C" void notifyWgsTxCompleteFromIsr();
+extern "C" void notifyWgsRxFromIsr(uint16_t _position);
+extern "C" void notifyWgsRxErrorFromIsr();
 extern "C" void notifyWgsDacDmaHalfCompleteFromIsr();
 extern "C" void notifyWgsDacDmaCompleteFromIsr();
 extern "C" void notifyWgsExternalPointTriggerFromIsr();

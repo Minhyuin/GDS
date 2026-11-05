@@ -33,6 +33,7 @@ public:
 
   static HAL_StatusTypeDef startContinuous() {
     disableUpdateInterrupt();
+    timer().Instance->CR1 &= ~TIM_CR1_OPM;
     setAckPulseTicks(ackPulseTicksForPeriod(currentPeriodTicks()));
     resetCounter();
     enableAckPwmOutputs();
@@ -42,57 +43,16 @@ public:
 
   static HAL_StatusTypeDef stop() {
     disableUpdateInterrupt();
-    if ((timer().Instance->CR1 & TIM_CR1_CEN) == 0U) {
-      return stopAckPwm();
-    }
-
-    const auto timerStatus = HAL_TIM_Base_Stop(&timer());
-    const auto pwmStatus = stopAckPwm();
-    return timerStatus != HAL_OK ? timerStatus : pwmStatus;
+    stopAckPwm();
+    return HAL_TIM_Base_Stop(&timer());
   }
 
   static HAL_StatusTypeDef stopContinuous() { return stop(); }
 
-  static HAL_StatusTypeDef pulseOnce(float _pulseWidthUs) {
-    auto status = stop();
-    if (status != HAL_OK) {
-      return status;
-    }
-
-    const auto savedConfig = captureConfig();
-    uint32_t pulseTicks = 0U;
-    status = configureSinglePulse(_pulseWidthUs, pulseTicks);
-    if (status != HAL_OK) {
-      restoreConfig(savedConfig);
-      return status;
-    }
-
-    resetCounter();
-    enableOnePulseMode();
-
-    timer().Instance->EGR = TIM_EGR_UG;
-    __HAL_TIM_CLEAR_FLAG(&timer(), TIM_FLAG_UPDATE);
-    startSinglePulseDirect();
-
-    status = waitForOnePulseComplete();
-
-    const auto pwmStatus = stopAckPwm();
-    restoreConfig(savedConfig);
-    if (status != HAL_OK) {
-      return status;
-    }
-    return pwmStatus;
-  }
-
   static HAL_StatusTypeDef prepareSinglePulse(float _pulseWidthUs) {
-    auto status = stop();
-    if (status != HAL_OK) {
-      return status;
-    }
-
+    stop();
     const auto savedConfig = captureConfig();
-    uint32_t pulseTicks = 0U;
-    status = configureSinglePulse(_pulseWidthUs, pulseTicks);
+    const auto status = configureSinglePulse(_pulseWidthUs);
     if (status != HAL_OK) {
       restoreConfig(savedConfig);
       return status;
@@ -117,12 +77,16 @@ public:
       return HAL_ERROR;
     }
 
-    clearUpdateFlag();
-    enableUpdateInterrupt();
-    timer().State = HAL_TIM_STATE_BUSY;
-    enableAckPwmOutputsTogether();
-    timer().Instance->CR1 |= TIM_CR1_CEN;
+    // Resolve the handle once on the external-trigger path.
+    auto &handle = timer();
+    auto *registers = handle.Instance;
+    registers->SR = ~TIM_FLAG_UPDATE;
+    registers->DIER |= TIM_DIER_UIE;
+    handle.State = HAL_TIM_STATE_BUSY;
     singlePulseFiring_ = true;
+    registers->CCER |= channelEnableBit(HandleProvider::ACK_CHANNEL_1) |
+                       channelEnableBit(HandleProvider::ACK_CHANNEL_2);
+    registers->CR1 |= TIM_CR1_CEN;
     return HAL_OK;
   }
 
@@ -135,7 +99,7 @@ public:
 
     disableUpdateInterrupt();
     clearUpdateFlag();
-    const auto pwmStatus = stopAckPwm();
+    stopAckPwm();
     if (!_keepPrepared) {
       restoreConfig(singlePulseRestoreConfig_);
       singlePulsePrepared_ = false;
@@ -144,16 +108,16 @@ public:
     }
     singlePulseFiring_ = false;
     timer().State = HAL_TIM_STATE_READY;
-    return pwmStatus == HAL_OK;
+    return true;
   }
 
   static void cancelPreparedSinglePulse() {
-    disableUpdateInterrupt();
-    clearUpdateFlag();
-    stopAckPwm();
-    if (singlePulsePrepared_ && !singlePulseFiring_) {
-      restoreConfig(singlePulseRestoreConfig_);
+    if (!singlePulsePrepared_) {
+      return;
     }
+    stop();
+    clearUpdateFlag();
+    restoreConfig(singlePulseRestoreConfig_);
     singlePulsePrepared_ = false;
     singlePulseFiring_ = false;
   }
@@ -171,7 +135,8 @@ public:
 
   static HAL_StatusTypeDef setUpdateFrequencyHz(float _frequencyHz) {
     disableUpdateInterrupt();
-    if (_frequencyHz <= 0.0F) {
+    if (!std::isfinite(_frequencyHz) || _frequencyHz < 1.0F ||
+        _frequencyHz > static_cast<float>(timerClockHz())) {
       return HAL_ERROR;
     }
 
@@ -181,26 +146,18 @@ public:
       return HAL_ERROR;
     }
 
-    uint32_t prescaler = (timerClock + (target * 65536UL) - 1UL) /
-                         (target * 65536UL);
-    if (prescaler == 0U) {
-      prescaler = 1U;
-    }
-    if (prescaler > 65536UL) {
-      return HAL_ERROR;
-    }
-
+    const uint64_t divisor = static_cast<uint64_t>(target) * 65536U;
+    uint32_t prescaler = static_cast<uint32_t>(
+        (static_cast<uint64_t>(timerClock) + divisor - 1U) / divisor);
     const uint32_t period = (timerClock / prescaler) / target;
-    if (period == 0U || period > 65536UL) {
-      return HAL_ERROR;
-    }
-    if (period < 2U) {
+    if (period < 2U || period > 65536UL) {
       return HAL_ERROR;
     }
 
     const bool wasEnabled = (timer().Instance->CR1 & TIM_CR1_CEN) != 0U;
     if (wasEnabled) {
-      HAL_TIM_Base_Stop(&timer());
+      // Keep PWM channel enables, but stop the counter while changing its base.
+      timer().Instance->CR1 &= ~TIM_CR1_CEN;
     }
 
     __HAL_TIM_SET_PRESCALER(&timer(), prescaler - 1U);
@@ -210,7 +167,8 @@ public:
     timer().Instance->EGR = TIM_EGR_UG;
 
     if (wasEnabled) {
-      return HAL_TIM_Base_Start(&timer());
+      // The HAL state stayed BUSY while only CEN was paused.
+      __HAL_TIM_ENABLE(&timer());
     }
     return HAL_OK;
   }
@@ -222,9 +180,8 @@ private:
   }
 
   static void enableAckPwmOutputsTogether() {
-    timer().Instance->CCER |=
-        channelEnableBit(HandleProvider::ACK_CHANNEL_1) |
-        channelEnableBit(HandleProvider::ACK_CHANNEL_2);
+    timer().Instance->CCER |= channelEnableBit(HandleProvider::ACK_CHANNEL_1) |
+                              channelEnableBit(HandleProvider::ACK_CHANNEL_2);
   }
 
   static HAL_StatusTypeDef stopAckPwm() {
@@ -256,6 +213,8 @@ private:
     uint32_t compare1{0U};
     uint32_t compare2{0U};
     uint32_t counter{0U};
+    uint32_t captureCompareMode1{0U};
+    uint32_t captureCompareMode2{0U};
   };
 
   static inline TimerConfig_s singlePulseRestoreConfig_{};
@@ -271,10 +230,14 @@ private:
         .compare1 = compareValue(HandleProvider::ACK_CHANNEL_1),
         .compare2 = compareValue(HandleProvider::ACK_CHANNEL_2),
         .counter = __HAL_TIM_GET_COUNTER(&timer()),
+        .captureCompareMode1 = timer().Instance->CCMR1,
+        .captureCompareMode2 = timer().Instance->CCMR2,
     };
   }
 
   static void restoreConfig(const TimerConfig_s &_config) {
+    timer().Instance->CCMR1 = _config.captureCompareMode1;
+    timer().Instance->CCMR2 = _config.captureCompareMode2;
     __HAL_TIM_SET_PRESCALER(&timer(), _config.prescaler);
     __HAL_TIM_SET_AUTORELOAD(&timer(), _config.autoReload);
     setCompareValue(HandleProvider::ACK_CHANNEL_1, _config.compare1);
@@ -286,18 +249,15 @@ private:
     timer().Instance->CR1 = _config.control1;
   }
 
-  static HAL_StatusTypeDef configureSinglePulse(float _pulseWidthUs,
-                                                uint32_t &_pulseTicks) {
+  static HAL_StatusTypeDef configureSinglePulse(float _pulseWidthUs) {
     if (!std::isfinite(_pulseWidthUs) || _pulseWidthUs <= 0.0F) {
       return HAL_ERROR;
     }
 
     const uint32_t timerClock = timerClockHz();
-    const double pulseSeconds =
-        static_cast<double>(_pulseWidthUs) / 1000000.0;
+    const double pulseSeconds = static_cast<double>(_pulseWidthUs) / 1000000.0;
     uint32_t prescaler = static_cast<uint32_t>(
-        std::ceil((static_cast<double>(timerClock) * pulseSeconds) /
-                  65535.0));
+        std::ceil((static_cast<double>(timerClock) * pulseSeconds) / 65535.0));
     if (prescaler == 0U) {
       prescaler = 1U;
     }
@@ -323,12 +283,16 @@ private:
       return HAL_ERROR;
     }
 
-    const uint32_t periodTicks =
-        pulseTicks == 65535U ? 65536U : pulseTicks + 1U;
+    // PWM2 stays low at CNT=0, rises at 1, and falls at overflow.
+    // OPM then stops at CNT=0: the falling edge never waits for the ISR.
+    auto *registers = timer().Instance;
+    auto &mode = HandleProvider::ACK_CHANNEL_1 == TIM_CHANNEL_1
+                     ? registers->CCMR1 : registers->CCMR2;
+    mode = (mode & ~(TIM_CCMR1_OC1M | TIM_CCMR1_OC2M)) |
+           TIM_OCMODE_PWM2 | (TIM_OCMODE_PWM2 << 8U);
     __HAL_TIM_SET_PRESCALER(&timer(), prescaler - 1U);
-    __HAL_TIM_SET_AUTORELOAD(&timer(), periodTicks - 1U);
-    setAckPulseTicks(pulseTicks);
-    _pulseTicks = pulseTicks;
+    __HAL_TIM_SET_AUTORELOAD(&timer(), pulseTicks);
+    setAckPulseTicks(1U);
     return HAL_OK;
   }
 
@@ -344,24 +308,6 @@ private:
 
   static void clearUpdateFlag() {
     __HAL_TIM_CLEAR_FLAG(&timer(), TIM_FLAG_UPDATE);
-  }
-
-  static void startSinglePulseDirect() {
-    const auto irqState = __get_PRIMASK();
-    __disable_irq();
-    timer().State = HAL_TIM_STATE_BUSY;
-    timer().Instance->CR1 |= TIM_CR1_CEN;
-    enableAckPwmOutputsTogether();
-    if (irqState == 0U) {
-      __enable_irq();
-    }
-  }
-
-  static HAL_StatusTypeDef waitForOnePulseComplete() {
-    while ((timer().Instance->CR1 & TIM_CR1_CEN) != 0U) {
-    }
-    timer().State = HAL_TIM_STATE_READY;
-    return HAL_OK;
   }
 
   static uint32_t ackPulseTicksForPeriod(uint32_t _periodTicks) {

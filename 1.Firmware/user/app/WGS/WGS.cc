@@ -92,17 +92,12 @@ bool shouldSendResult(const PROTOCOL::Command_v &_command) {
 } // namespace
 
 WGSManager::WGSManager()
-    : protocol_(transport_, parser_), output_(dacPlayer_, waveformStore_) {
+    : protocol_(transport_), output_(dacPlayer_, waveformStore_) {
   activeWgs = this;
 }
 
 PROTOCOL::Result_s WGSManager::init() {
   auto result = transport_.start();
-  if (!result.ok()) {
-    return result;
-  }
-
-  result = output_.enterBufferedMode();
   if (!result.ok()) {
     return result;
   }
@@ -115,7 +110,7 @@ PROTOCOL::Result_s WGSManager::init() {
   return startTask();
 }
 
-void WGSManager::notifyRxFromIsr() {
+void WGSManager::notifyTaskFromIsr() {
   if (taskHandle_ == nullptr) {
     return;
   }
@@ -125,7 +120,15 @@ void WGSManager::notifyRxFromIsr() {
   portYIELD_FROM_ISR(highPriorityTaskWoken);
 }
 
-void WGSManager::onTxCompleteFromIsr() { transport_.onTxComplete(); }
+void WGSManager::onRxEventFromIsr(uint16_t _position) {
+  transport_.onRxEventFromIsr(_position);
+  notifyTaskFromIsr();
+}
+
+void WGSManager::onRxErrorFromIsr() {
+  transport_.onErrorFromIsr();
+  notifyTaskFromIsr();
+}
 
 void WGSManager::onDacDmaHalfCompleteFromIsr() {}
 
@@ -158,19 +161,49 @@ void WGSManager::taskEntry(void *_argument) {
 
 void WGSManager::taskLoop() {
   while (true) {
-    ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+    if (transport_.hasPendingError()) {
+      if (!recoverRx().ok()) {
+        vTaskDelay(pdMS_TO_TICKS(10));
+      }
+      continue;
+    }
+
     processRx();
+
+    // A restart failure keeps rxErrorPending_ set. Do not sleep with that
+    // condition: retry recovery from the top of the loop.
+    if (transport_.hasPendingError()) {
+      continue;
+    }
+
+    ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
   }
+}
+
+PROTOCOL::Result_s WGSManager::recoverRx() {
+  parser_.reset();
+  return transport_.restart();
 }
 
 void WGSManager::processRx() {
   while (true) {
+    if (transport_.hasPendingError()) {
+      return;
+    }
+
     auto rx = transport_.consumeRx();
+    if (rx.overwritten) {
+      return;
+    }
     if (rx.bytes.empty()) {
       return;
     }
 
     for (auto byte : rx.bytes) {
+      if (transport_.hasPendingError()) {
+        return;
+      }
+
       auto parsed = parser_.feed(static_cast<uint8_t>(byte));
       if (!parsed.result.ok()) {
         protocol_.sendNack(parsed.result.code);
@@ -520,15 +553,15 @@ void WGSManager::sendResult(PROTOCOL::Result_s _result) {
 
 } // namespace APP::WGS
 
-extern "C" void notifyWgsRxFromIsr() {
+extern "C" void notifyWgsRxFromIsr(uint16_t _position) {
   if (APP::WGS::activeWgs != nullptr) {
-    APP::WGS::activeWgs->notifyRxFromIsr();
+    APP::WGS::activeWgs->onRxEventFromIsr(_position);
   }
 }
 
-extern "C" void notifyWgsTxCompleteFromIsr() {
+extern "C" void notifyWgsRxErrorFromIsr() {
   if (APP::WGS::activeWgs != nullptr) {
-    APP::WGS::activeWgs->onTxCompleteFromIsr();
+    APP::WGS::activeWgs->onRxErrorFromIsr();
   }
 }
 
@@ -579,15 +612,9 @@ extern "C" void HAL_DAC_ConvCpltCallbackCh1(DAC_HandleTypeDef *) {
 }
 
 extern "C" void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *_huart,
-                                           uint16_t) {
+                                           uint16_t _offset) {
   if (_huart == &huart1) {
-    notifyWgsRxFromIsr();
-  }
-}
-
-extern "C" void HAL_UART_TxCpltCallback(UART_HandleTypeDef *_huart) {
-  if (_huart == &huart1) {
-    notifyWgsTxCompleteFromIsr();
+    notifyWgsRxFromIsr(_offset);
   }
 }
 
@@ -604,6 +631,5 @@ extern "C" void HAL_UART_ErrorCallback(UART_HandleTypeDef *_huart) {
     __HAL_UART_CLEAR_FEFLAG(_huart);
   }
 
-  HAL_UARTEx_ReceiveToIdle_DMA(_huart, _huart->pRxBuffPtr, _huart->RxXferSize);
-  __HAL_DMA_DISABLE_IT(_huart->hdmarx, DMA_IT_HT);
+  notifyWgsRxErrorFromIsr();
 }

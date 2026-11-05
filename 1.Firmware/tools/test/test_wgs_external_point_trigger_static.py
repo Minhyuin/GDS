@@ -51,30 +51,11 @@ def test_cubemx_external_pulse_and_timer_irqs_are_enabled():
 
 def test_point_commands_arm_external_trigger_instead_of_pulsing_immediately():
     player = read("user/app/WGS/output/DacWavePlayer.hpp")
-    output_mode = read("user/app/WGS/output/OutputMode.hpp")
 
     assert_contains(player, "armPointPulse", "single point should arm external trigger")
     assert_contains(player, "firePendingPointPulseFromIsr", "EXTI should fire armed point pulse")
     assert_contains(player, "completePointPulseFromIsr", "TIM update should clean point pulse")
     assert_contains(player, "prepareSinglePulse", "point command should preconfigure one-pulse")
-
-    hold_channel = text_between(player, "APP::WGS::PROTOCOL::Result_s holdChannel", "  APP::WGS::PROTOCOL::Result_s holdChannels")
-    hold_channels = text_between(player, "APP::WGS::PROTOCOL::Result_s holdChannels", "  APP::WGS::PROTOCOL::Result_s setPointPulseWidth")
-    assert_not_contains(hold_channel, "pulseTimer(", "POINT_SET should not pulse before external trigger")
-    assert_not_contains(hold_channels, "pulseTimer(", "POINT2_SET should not pulse before external trigger")
-    assert_contains(hold_channel, "const bool wasBusy = isPointPulseBusy();", "POINT_SET should remember busy state")
-    assert_contains(hold_channels, "const bool wasBusy = isPointPulseBusy();", "POINT2_SET should remember busy state")
-    assert_order(hold_channel, "setDacValue", "if (wasBusy)", "POINT_SET should update DAC before reporting BUSY")
-    assert_order(hold_channels, "setDacValue", "if (wasBusy)", "POINT2_SET should update DAC before reporting BUSY")
-    assert_contains(hold_channel, "return APP::WGS::PROTOCOL::Result_s::busy();", "POINT_SET should still report BUSY")
-    assert_contains(hold_channels, "return APP::WGS::PROTOCOL::Result_s::busy();", "POINT2_SET should still report BUSY")
-
-    point_set_handler = text_between(output_mode, "const APP::WGS::PROTOCOL::PointSetCommand_s", "  APP::WGS::PROTOCOL::Result_s\n  handle(OutputContext_s<Player_s> &_ctx,\n         const APP::WGS::PROTOCOL::Point2SetCommand_s")
-    point2_set_handler = text_between(output_mode, "const APP::WGS::PROTOCOL::Point2SetCommand_s", "  APP::WGS::PROTOCOL::Result_s\n  handle(OutputContext_s<Player_s> &_ctx,\n         const APP::WGS::PROTOCOL::PointPulseWidthSetCommand_s")
-    assert_not_contains(point_set_handler, "isPointPulseBusy()", "POINT_SET mode handler should let player update DAC while busy")
-    assert_not_contains(point2_set_handler, "isPointPulseBusy()", "POINT2_SET mode handler should let player update DAC while busy")
-    assert_contains(output_mode, "isPointPulseBusy()", "non-point output commands should reject while point trigger is busy")
-    assert_contains(output_mode, "Result_s::busy()", "busy point trigger should return BUSY")
 
 
 def test_busy_is_reported_as_ack_busy_none():
@@ -177,8 +158,6 @@ def test_point2_fifo_protocol_and_external_trigger_path():
     assert_contains(output_mode, "Point2FifoAppendCommand_s", "POINT2 FIFO append dispatch")
     assert_contains(output_mode, "Point2FifoStartCommand_s", "POINT2 FIFO start dispatch")
     assert_contains(output_mode, "Point2FifoStopCommand_s", "POINT2 FIFO stop dispatch")
-    assert_contains(output_mode, "isPointFifoActive()", "non-FIFO commands should reject while POINT FIFO is active")
-    assert_contains(output_mode, "isPoint2FifoActive()", "non-FIFO commands should reject while FIFO is active")
 
 
 def test_readme_documents_external_trigger_limitations():

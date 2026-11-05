@@ -28,6 +28,10 @@ from source.modules.protocol.codec import (  # noqa: E402
 )
 
 
+from source.modules.protocol.constants import AckStatus, ErrorCode, FrameType  # noqa: E402
+from source.modules.protocol.reply import parse_reply  # noqa: E402
+
+
 def assert_equal(actual, expected, label):
     if actual != expected:
         raise AssertionError(
@@ -125,8 +129,72 @@ def test_sequence_set_1000_points_frame_size():
     assert_equal(frame[4:8], bytes.fromhex("60 02 E8 03"), "SEQUENCE_SET payload prefix")
 
 
+def test_raw_nack_unsupported_command_reply():
+    raw = bytes.fromhex("A5 03 02 00 80 03")
+    reply = parse_reply(raw[1], raw[4:], raw)
+    if reply.summary() != "NACK status=ERROR detail=UNSUPPORTED_COMMAND":
+        raise AssertionError(f"unexpected raw NACK summary: {reply.summary()}")
+    if reply.raw != raw:
+        raise AssertionError(f"unexpected raw NACK bytes: {reply.raw.hex(' ').upper()}")
+
+
+def test_ack_status_firmware_contract():
+    expected = [
+        ("ACCEPTED", 0x00),
+        ("DONE", 0x01),
+        ("BUSY", 0x02),
+        ("ERROR", 0x80),
+    ]
+    actual = [(status.name, int(status)) for status in AckStatus]
+    if actual != expected:
+        raise AssertionError(f"ACK status contract mismatch; expected: {expected}; actual: {actual}")
+
+    for name, value in expected:
+        status = AckStatus(value)
+        if status.name != name or int(status) != value:
+            raise AssertionError(f"ACK status {name}: expected {value:#04x}, got {int(status):#04x}")
+        frame_type = FrameType.NACK if status == AckStatus.ERROR else FrameType.ACK
+        raw = bytes([0xA5, int(frame_type), 2, 0, value, int(ErrorCode.NONE)])
+        reply = parse_reply(frame_type, raw[4:], raw)
+        if reply.status != status or reply.status.name != name:
+            raise AssertionError(f"ACK status parse mismatch for {name}: {reply.summary()}")
+
+
+def test_error_code_firmware_contract():
+    expected = [
+        ("NONE", 0x00),
+        ("CRC_ERROR", 0x01),
+        ("BAD_LENGTH", 0x02),
+        ("UNSUPPORTED_COMMAND", 0x03),
+        ("INVALID_STATE", 0x04),
+        ("OUT_OF_RANGE", 0x05),
+        ("BUFFER_FULL", 0x06),
+        ("BAD_OFFSET", 0x07),
+        ("WAVE_CRC_MISMATCH", 0x08),
+        ("DMA_BUSY", 0x09),
+        ("UNDERRUN", 0x0A),
+        ("TRANSPORT_BUSY", 0x0B),
+    ]
+    actual = [(code.name, int(code)) for code in ErrorCode]
+    if actual != expected:
+        raise AssertionError(f"error code contract mismatch; expected: {expected}; actual: {actual}")
+
+    for name, value in expected:
+        code = ErrorCode(value)
+        raw = bytes([0xA5, int(FrameType.NACK), 2, 0, int(AckStatus.ERROR), value])
+        reply = parse_reply(FrameType.NACK, raw[4:], raw)
+        expected_summary = f"NACK status=ERROR detail={name}"
+        if reply.detail != code or reply.detail.name != name or reply.summary() != expected_summary:
+            raise AssertionError(
+                f"error code parse/name mismatch for {name}: expected {expected_summary}, got {reply.summary()}"
+            )
+
+
 def run_all():
     tests = [
+        test_raw_nack_unsupported_command_reply,
+        test_ack_status_firmware_contract,
+        test_error_code_firmware_contract,
         test_ping_frame,
         test_sync_frame,
         test_point_set_ch1_1v5_frame,

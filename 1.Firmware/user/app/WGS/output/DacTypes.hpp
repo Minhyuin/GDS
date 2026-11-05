@@ -12,13 +12,6 @@ enum class OutputChannel_e : uint8_t {
   CH2 = 0x02,
 };
 
-enum class PlayerState_e : uint8_t {
-  STOPPED,
-  READY,
-  PLAYING,
-  FAULT,
-};
-
 struct DacSample_s {
   uint16_t value{0};
 };

@@ -57,6 +57,10 @@ file(GLOB_RECURSE USER_SOURCES CONFIGURE_DEPENDS
 list(FILTER USER_SOURCES EXCLUDE REGEX ".*/user/lib(/.*)?$")
 add_executable(${CMAKE_PROJECT_NAME} ${USER_SOURCES})
 
+# The external-trigger ACK path needs bounded execution time even in Debug.
+set_source_files_properties("${CMAKE_SOURCE_DIR}/user/app/WGS/WGS.cc"
+    PROPERTIES COMPILE_OPTIONS "-O2")
+
 # Add STM32CubeMX generated sources
 add_subdirectory(cmake/stm32cubemx)
 

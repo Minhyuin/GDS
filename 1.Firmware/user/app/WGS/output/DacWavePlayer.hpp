@@ -20,43 +20,33 @@ public:
       WaveformStore::PERIOD_SAMPLE_COUNT;
   static constexpr float MIN_SAMPLE_RATE_HZ = 1.0F;
   static constexpr float MAX_SAMPLE_RATE_HZ = 100000.0F; // 100k Sa/s
-  static constexpr float MIN_POINT_PULSE_WIDTH_US = 1.0F;
-  static constexpr float MAX_POINT_PULSE_WIDTH_US = 1000000.0F;
   static constexpr size_t POINT_FIFO_CAPACITY = 1024;
   static constexpr size_t POINT2_FIFO_CAPACITY = 1024;
 
   DacWavePlayer() = default;
   ~DacWavePlayer() { stop(); }
 
-  APP::WGS::PROTOCOL::Result_s start(WaveformStore &) {
-    return enterIdleLow();
-  }
+  APP::WGS::PROTOCOL::Result_s start(WaveformStore &) { return enterIdleLow(); }
 
   APP::WGS::PROTOCOL::Result_s enterIdleLow() {
     DacHardware::stopDma(DAC_CHANNEL_1);
     DacHardware::stopDma(DAC_CHANNEL_2);
     DMAch1Hardware::stopContinuous();
     DMAch2Hardware::stopContinuous();
-    clearPointPulseState();
-    clearPointFifo();
-    clearPoint2Fifo();
+    resetPointModes();
 
-    if (DacHardware::setDacValue(DAC_CHANNEL_1, 0U) != HAL_OK) {
-      return fail();
-    }
-    if (DacHardware::setDacValue(DAC_CHANNEL_2, 0U) != HAL_OK) {
-      return fail();
-    }
     if (DacHardware::startDac(DAC_CHANNEL_1) != HAL_OK) {
       return fail();
     }
     if (DacHardware::startDac(DAC_CHANNEL_2) != HAL_OK) {
       return fail();
     }
+    // Write after disabling timer triggers so DHR transfers to DOR immediately.
+    DacHardware::setDacValue(DAC_CHANNEL_1, 0U);
+    DacHardware::setDacValue(DAC_CHANNEL_2, 0U);
 
     sequencePlayingCh1_ = false;
     sequencePlayingCh2_ = false;
-    state_ = PlayerState_e::READY;
     return APP::WGS::PROTOCOL::Result_s::success();
   }
 
@@ -65,31 +55,34 @@ public:
     DacHardware::stopDma(DAC_CHANNEL_2);
     DMAch1Hardware::stopContinuous();
     DMAch2Hardware::stopContinuous();
-    clearPointPulseState();
-    clearPointFifo();
-    clearPoint2Fifo();
+    resetPointModes();
     sequencePlayingCh1_ = false;
     sequencePlayingCh2_ = false;
-    state_ = PlayerState_e::STOPPED;
   }
 
-  APP::WGS::PROTOCOL::Result_s reloadChannel(OutputChannel_e _channel,
-                                             WaveformStore &_store) {
+  APP::WGS::PROTOCOL::Result_s
+  replaceSequence(OutputChannel_e _channel,
+                  std::span<const APP::WGS::PROTOCOL::DacSample_s> _samples,
+                  WaveformStore &_store) {
     if (isPointPulseBusy() || isPointFifoActive() || isPoint2FifoActive()) {
       return APP::WGS::PROTOCOL::Result_s::busy();
     }
-
+    if (_samples.empty()) {
+      return APP::WGS::PROTOCOL::Result_s::fail(
+          APP::WGS::PROTOCOL::ErrorCode_e::BAD_LENGTH);
+    }
     if (stopChannel(_channel) != HAL_OK) {
       return fail();
     }
     setSequencePlaying(_channel, false);
-
+    auto result = _store.setSequence(_channel, _samples);
+    if (!result.ok()) {
+      return result;
+    }
     if (startChannel(_channel, _store) != HAL_OK) {
       return fail();
     }
-
     setSequencePlaying(_channel, true);
-    state_ = PlayerState_e::PLAYING;
     return APP::WGS::PROTOCOL::Result_s::success();
   }
 
@@ -116,11 +109,27 @@ public:
           APP::WGS::PROTOCOL::ErrorCode_e::OUT_OF_RANGE);
     }
 
+    if (sampleRateHz < MIN_SAMPLE_RATE_HZ) {
+      return APP::WGS::PROTOCOL::Result_s::fail(
+          APP::WGS::PROTOCOL::ErrorCode_e::OUT_OF_RANGE);
+    }
+    const bool playing = sequencePlaying(_channel);
+    if (playing && stopChannel(_channel) != HAL_OK) {
+      return fail();
+    }
+    setSequencePlaying(_channel, false);
     auto result = setSampleRate(_channel, sampleRateHz);
     if (!result.ok()) {
       return result;
     }
-    return _store.setActiveLength(_channel, _lengthSa);
+    result = _store.setActiveLength(_channel, _lengthSa);
+    if (playing) {
+      if (startChannel(_channel, _store) != HAL_OK) {
+        return fail();
+      }
+      setSequencePlaying(_channel, true);
+    }
+    return result;
   }
 
   APP::WGS::PROTOCOL::Result_s sync(WaveformStore &_store) {
@@ -159,29 +168,28 @@ public:
       return fail();
     }
 
-    state_ = PlayerState_e::PLAYING;
     return APP::WGS::PROTOCOL::Result_s::success();
   }
 
-  APP::WGS::PROTOCOL::Result_s holdChannel(OutputChannel_e _channel,
-                                           uint16_t _sample,
-                                           float _ackPulseUs) {
+  APP::WGS::PROTOCOL::Result_s
+  holdChannel(OutputChannel_e _channel, uint16_t _sample, float _ackPulseUs) {
     if (isPointFifoActive() || isPoint2FifoActive()) {
       return APP::WGS::PROTOCOL::Result_s::busy();
     }
 
     const bool wasBusy = isPointPulseBusy();
+    if (sequencePlaying(_channel)) {
+      stopTimer(_channel);
+    }
 
     if (DacHardware::stopDma(dacChannel(_channel)) != HAL_OK) {
       return fail();
     }
     setSequencePlaying(_channel, false);
-    if (DacHardware::setDacValue(dacChannel(_channel), _sample) != HAL_OK) {
-      return fail();
-    }
     if (DacHardware::startDac(dacChannel(_channel)) != HAL_OK) {
       return fail();
     }
+    DacHardware::setDacValue(dacChannel(_channel), _sample);
     if (wasBusy) {
       return APP::WGS::PROTOCOL::Result_s::busy();
     }
@@ -193,13 +201,11 @@ public:
       return APP::WGS::PROTOCOL::Result_s::busy();
     }
 
-    state_ = PlayerState_e::READY;
     return APP::WGS::PROTOCOL::Result_s::success();
   }
 
-  APP::WGS::PROTOCOL::Result_s holdChannels(uint16_t _ch1Sample,
-                                            uint16_t _ch2Sample,
-                                            float _ackPulseUs) {
+  APP::WGS::PROTOCOL::Result_s
+  holdChannels(uint16_t _ch1Sample, uint16_t _ch2Sample, float _ackPulseUs) {
     if (isPointFifoActive() || isPoint2FifoActive()) {
       return APP::WGS::PROTOCOL::Result_s::busy();
     }
@@ -212,13 +218,11 @@ public:
     if (DacHardware::stopDma(DAC_CHANNEL_2) != HAL_OK) {
       return fail();
     }
-    DMAch1Hardware::stopContinuous();
-    DMAch2Hardware::stopContinuous();
-    if (DacHardware::setDacValue(DAC_CHANNEL_1, _ch1Sample) != HAL_OK) {
-      return fail();
+    if (sequencePlayingCh1_) {
+      DMAch1Hardware::stopContinuous();
     }
-    if (DacHardware::setDacValue(DAC_CHANNEL_2, _ch2Sample) != HAL_OK) {
-      return fail();
+    if (sequencePlayingCh2_) {
+      DMAch2Hardware::stopContinuous();
     }
     if (DacHardware::startDac(DAC_CHANNEL_1) != HAL_OK) {
       return fail();
@@ -226,6 +230,9 @@ public:
     if (DacHardware::startDac(DAC_CHANNEL_2) != HAL_OK) {
       return fail();
     }
+    // Write after disabling timer triggers so DHR transfers to DOR immediately.
+    DacHardware::setDacValue(DAC_CHANNEL_1, _ch1Sample);
+    DacHardware::setDacValue(DAC_CHANNEL_2, _ch2Sample);
 
     sequencePlayingCh1_ = false;
     sequencePlayingCh2_ = false;
@@ -245,7 +252,6 @@ public:
       return APP::WGS::PROTOCOL::Result_s::busy();
     }
 
-    state_ = PlayerState_e::READY;
     return APP::WGS::PROTOCOL::Result_s::success();
   }
 
@@ -290,7 +296,6 @@ public:
     return APP::WGS::PROTOCOL::Result_s::success();
   }
 
-  PlayerState_e state() const { return state_; }
   bool canSync() const { return sequencePlayingCh1_ && sequencePlayingCh2_; }
 
   bool isPointPulseBusy() const {
@@ -306,11 +311,13 @@ public:
   }
 
   APP::WGS::PROTOCOL::Result_s clearPointFifo() {
-    pointFifoEnabled_ = false;
-    clearPointPulseState();
-
+    if (isPoint2FifoActive()) {
+      return APP::WGS::PROTOCOL::Result_s::busy();
+    }
     const auto irqState = __get_PRIMASK();
     __disable_irq();
+    pointFifoEnabled_ = false;
+    clearPointPulseState();
     pointFifoHead_ = 0;
     pointFifoTail_ = 0;
     pointFifoCount_ = 0;
@@ -320,12 +327,15 @@ public:
     return APP::WGS::PROTOCOL::Result_s::success();
   }
 
-  APP::WGS::PROTOCOL::Result_s clearPointFifo(OutputChannel_e) {
+  APP::WGS::PROTOCOL::Result_s clearPointFifo(OutputChannel_e _channel) {
+    if (isPointFifoActive() && _channel != pointFifoChannel_) {
+      return APP::WGS::PROTOCOL::Result_s::busy();
+    }
     return clearPointFifo();
   }
 
-  APP::WGS::PROTOCOL::Result_s stopPointFifo(OutputChannel_e) {
-    return clearPointFifo();
+  APP::WGS::PROTOCOL::Result_s stopPointFifo(OutputChannel_e _channel) {
+    return clearPointFifo(_channel);
   }
 
   APP::WGS::PROTOCOL::Result_s appendPointFifo(
@@ -343,7 +353,7 @@ public:
     {
       const auto irqState = __get_PRIMASK();
       __disable_irq();
-      if (pointFifoCount_ != 0U && _channel != pointFifoChannel_) {
+      if (isPointFifoActive() && _channel != pointFifoChannel_) {
         if (irqState == 0U) {
           __enable_irq();
         }
@@ -383,10 +393,13 @@ public:
     if (isPointPulseBusy() || isPoint2FifoActive()) {
       return APP::WGS::PROTOCOL::Result_s::busy();
     }
-    if (pointFifoCount_ != 0U && pointFifoChannel_ != _channel) {
+    if (isPointFifoActive() && pointFifoChannel_ != _channel) {
       return APP::WGS::PROTOCOL::Result_s::busy();
     }
 
+    if (pointFifoEnabled_) {
+      return APP::WGS::PROTOCOL::Result_s::success();
+    }
     if (DacHardware::stopDma(dacChannel(_channel)) != HAL_OK) {
       return fail();
     }
@@ -401,16 +414,17 @@ public:
 
     pointFifoChannel_ = _channel;
     pointFifoEnabled_ = true;
-    state_ = PlayerState_e::READY;
     return APP::WGS::PROTOCOL::Result_s::success();
   }
 
   APP::WGS::PROTOCOL::Result_s clearPoint2Fifo() {
-    point2FifoEnabled_ = false;
-    clearPointPulseState();
-
+    if (isPointFifoActive()) {
+      return APP::WGS::PROTOCOL::Result_s::busy();
+    }
     const auto irqState = __get_PRIMASK();
     __disable_irq();
+    point2FifoEnabled_ = false;
+    clearPointPulseState();
     point2FifoHead_ = 0;
     point2FifoTail_ = 0;
     point2FifoCount_ = 0;
@@ -420,9 +434,7 @@ public:
     return APP::WGS::PROTOCOL::Result_s::success();
   }
 
-  APP::WGS::PROTOCOL::Result_s stopPoint2Fifo() {
-    return clearPoint2Fifo();
-  }
+  APP::WGS::PROTOCOL::Result_s stopPoint2Fifo() { return clearPoint2Fifo(); }
 
   APP::WGS::PROTOCOL::Result_s appendPoint2Fifo(
       std::span<const APP::WGS::PROTOCOL::Point2FifoPoint_s> _points) {
@@ -472,6 +484,9 @@ public:
       return APP::WGS::PROTOCOL::Result_s::busy();
     }
 
+    if (point2FifoEnabled_) {
+      return APP::WGS::PROTOCOL::Result_s::success();
+    }
     if (DacHardware::stopDma(DAC_CHANNEL_1) != HAL_OK) {
       return fail();
     }
@@ -497,7 +512,6 @@ public:
     sequencePlayingCh1_ = false;
     sequencePlayingCh2_ = false;
     point2FifoEnabled_ = true;
-    state_ = PlayerState_e::READY;
     return APP::WGS::PROTOCOL::Result_s::success();
   }
 
@@ -550,8 +564,7 @@ private:
   static constexpr uint8_t POINT_PULSE_NONE = 0x00U;
   static constexpr uint8_t POINT_PULSE_CH1 = 0x01U;
   static constexpr uint8_t POINT_PULSE_CH2 = 0x02U;
-  static constexpr uint8_t POINT_PULSE_BOTH =
-      POINT_PULSE_CH1 | POINT_PULSE_CH2;
+  static constexpr uint8_t POINT_PULSE_BOTH = POINT_PULSE_CH1 | POINT_PULSE_CH2;
 
   static size_t nextPointFifoIndex(size_t _index) {
     ++_index;
@@ -568,8 +581,7 @@ private:
   }
 
   static uint8_t pointPulseMask(OutputChannel_e _channel) {
-    return _channel == OutputChannel_e::CH1 ? POINT_PULSE_CH1
-                                            : POINT_PULSE_CH2;
+    return _channel == OutputChannel_e::CH1 ? POINT_PULSE_CH1 : POINT_PULSE_CH2;
   }
 
   static HAL_StatusTypeDef startTimer(OutputChannel_e _channel) {
@@ -650,6 +662,28 @@ private:
     }
   }
 
+  bool sequencePlaying(OutputChannel_e _channel) const {
+    return _channel == OutputChannel_e::CH1 ? sequencePlayingCh1_
+                                            : sequencePlayingCh2_;
+  }
+
+  void resetPointModes() {
+    const auto irqState = __get_PRIMASK();
+    __disable_irq();
+    pointFifoEnabled_ = false;
+    point2FifoEnabled_ = false;
+    clearPointPulseState();
+    pointFifoHead_ = 0;
+    pointFifoTail_ = 0;
+    pointFifoCount_ = 0;
+    point2FifoHead_ = 0;
+    point2FifoTail_ = 0;
+    point2FifoCount_ = 0;
+    if (irqState == 0U) {
+      __enable_irq();
+    }
+  }
+
   bool armPointPulse(uint8_t _mask) {
     const auto irqState = __get_PRIMASK();
     __disable_irq();
@@ -667,10 +701,6 @@ private:
     const auto irqState = __get_PRIMASK();
     __disable_irq();
     firingPointPulseMask_ &= static_cast<uint8_t>(~_mask);
-    if (firingPointPulseMask_ == POINT_PULSE_NONE &&
-        pendingPointPulseMask_ == POINT_PULSE_NONE) {
-      state_ = PlayerState_e::READY;
-    }
     if (irqState == 0U) {
       __enable_irq();
     }
@@ -707,9 +737,7 @@ private:
     }
 
     const uint32_t dac = dacChannel(pointFifoChannel_);
-    if (DacHardware::setDacValue(dac, point.sample.value) != HAL_OK) {
-      return true;
-    }
+    DacHardware::setDacValue(dac, point.sample.value);
 
     const uint8_t mask = pointPulseMask(pointFifoChannel_);
     firingPointPulseMask_ = mask;
@@ -747,14 +775,8 @@ private:
       return true;
     }
 
-    if (DacHardware::setDacValue(DAC_CHANNEL_1, point.ch1Sample.value) !=
-        HAL_OK) {
-      return true;
-    }
-    if (DacHardware::setDacValue(DAC_CHANNEL_2, point.ch2Sample.value) !=
-        HAL_OK) {
-      return true;
-    }
+    DacHardware::setDacValue(DAC_CHANNEL_1, point.ch1Sample.value);
+    DacHardware::setDacValue(DAC_CHANNEL_2, point.ch2Sample.value);
 
     firingPointPulseMask_ = POINT_PULSE_BOTH;
     if (DMAch1Hardware::firePreparedSinglePulseFromIsr() != HAL_OK) {
@@ -767,12 +789,10 @@ private:
   }
 
   APP::WGS::PROTOCOL::Result_s fail() {
-    state_ = PlayerState_e::FAULT;
     return APP::WGS::PROTOCOL::Result_s::fail(
         APP::WGS::PROTOCOL::ErrorCode_e::INVALID_STATE);
   }
 
-  PlayerState_e state_{PlayerState_e::STOPPED};
   bool sequencePlayingCh1_{false};
   bool sequencePlayingCh2_{false};
   float pointPulseWidthUs_{APP::WGS::PROTOCOL::POINT_PULSE_WIDTH_DEFAULT_US};

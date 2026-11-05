@@ -9,11 +9,9 @@
 
 namespace APP::WGS::COMM {
 
-template <typename Transport, typename Parser, typename FramePolicy>
-class ProtocolService {
+template <typename Transport, typename FramePolicy> class ProtocolService {
 public:
-  ProtocolService(Transport &_transport, Parser &_parser)
-      : transport_(&_transport), parser_(&_parser) {}
+  explicit ProtocolService(Transport &_transport) : transport_(_transport) {}
 
   APP::WGS::PROTOCOL::Result_s
   sendAck(const APP::WGS::PROTOCOL::AckPayload_s &_ack) {
@@ -54,12 +52,11 @@ private:
       txFrame_[7] = static_cast<std::byte>((crc >> 8U) & 0xFFU);
     }
 
-    return transport_->tryWrite(
+    return transport_.tryWrite(
         std::span<const std::byte>(txFrame_.data(), txFrame_.size()));
   }
 
-  Transport *transport_{nullptr};
-  Parser *parser_{nullptr};
+  Transport &transport_;
   std::array<std::byte, REPLY_FRAME_SIZE> txFrame_{};
 };
 

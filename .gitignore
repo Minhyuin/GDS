@@ -13,3 +13,4 @@ task_plan.md
 *.code-workspace
 
 */*.log
+log/

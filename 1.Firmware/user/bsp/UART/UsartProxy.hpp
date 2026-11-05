@@ -23,17 +23,22 @@ public:
   static DMA_HandleTypeDef &txDma() { return HandleProvider::txDma(); }
 
   static HAL_StatusTypeDef startRxDma(uint8_t *_buffer, size_t _size) {
-    const auto status =
-        HAL_UARTEx_ReceiveToIdle_DMA(&uart(), _buffer, _size);
-    if (status == HAL_OK) {
-      __HAL_DMA_DISABLE_IT(&rxDma(), DMA_IT_HT);
-    }
-    return status;
+    return HAL_UARTEx_ReceiveToIdle_DMA(&uart(), _buffer, _size);
   }
 
-  static HAL_StatusTypeDef transmitDma(uint8_t *_buffer, size_t _size) {
-    return HAL_UART_Transmit_DMA(&uart(), _buffer, _size);
+  static HAL_StatusTypeDef transmitBlocking(uint8_t *_buffer, size_t _size,
+                                            uint32_t _timeoutMs) {
+    return HAL_UART_Transmit(&uart(), _buffer, static_cast<uint16_t>(_size),
+                             _timeoutMs);
   }
+
+  static uint32_t irqSave() {
+    const uint32_t primask = __get_PRIMASK();
+    __disable_irq();
+    return primask;
+  }
+
+  static void irqRestore(uint32_t _primask) { __set_PRIMASK(_primask); }
 
   static void stopDma() { HAL_UART_DMAStop(&uart()); }
 

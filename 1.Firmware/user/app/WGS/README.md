@@ -9,7 +9,7 @@ CH1 / DAC_OUT1 <- TIM4 TRGO
 CH2 / DAC_OUT2 <- TIM5 TRGO
 ```
 
-每个通道拥有 1000 个周期样本。DAC circular DMA 扫描这 1000 个样本，因此 DMA 区域本身就是一个波形周期。
+每个通道最多容纳 1000 个周期样本。DAC circular DMA 按当前 active length 扫描，因此 DMA 区域本身就是一个波形周期。点输出和 FIFO 模式禁用 DAC 定时器触发，写入数据后直接更新电压；TIM4/TIM5 在这些模式下只负责 ACK 脉冲。
 
 ## 模块边界
 
@@ -410,7 +410,7 @@ payload:
 sample_rate_hz = length_sa * frequency_hz
 ```
 
-并配置对应通道的 TIM4/TIM5 触发频率。
+并配置对应通道的 TIM4/TIM5 触发频率。如果通道正在播放，会先停止 DMA，再用新长度重新启动；这不是无缝换表，切换时会有短暂停顿。
 
 ```text
 offset  size  field
@@ -425,7 +425,7 @@ offset  size  field
 ```text
 1 <= length_sa <= 1000
 frequency_hz > 0
-length_sa * frequency_hz <= 100000 Sa/s
+1 <= length_sa * frequency_hz <= 100000 Sa/s
 ```
 
 长度非法时返回 `NACK / BAD_LENGTH`；频率或采样率越界时返回 `NACK / OUT_OF_RANGE`。
@@ -508,3 +508,12 @@ cleanupObj = onCleanup(@() client.close());
 client.sequenceSet(1, ch1Samples, 100);  % config length/frequency first
 client.sequenceSet(2, ch2Samples, 100);
 ```
+
+
+## 2026-11-04 修复后的运行约束
+
+- `SEQUENCE_SET` 在写入周期表之前停止该通道 DMA，完成写入后重新启动，避免 DMA 读取混合的新旧数据；不承诺无缝切换。
+- 点/FIFO 电压直接写入 DAC；ACK 启动前完成寄存器写入，不再等待 ACK 末尾的 timer update。模拟电压建立时间、双通道偏斜须用实板测量。
+- 单通道 FIFO 的通道在 START 后固定，即使暂时为空，也不能通过 APPEND 切到另一通道；先 STOP/CLEAR 再切换。
+- BUSY 时 POINT/POINT2 更新电压而保留已有脉冲及其完成中断。FIFO STOP/CLEAR 会取消当前脉冲、恢复定时器配置并丢弃剩余点。
+- 本轮主机回归与 ARM 构建记录见仓库根目录 `log/firmware-repair-2026-11-04.md`；尚无实板验收结论。

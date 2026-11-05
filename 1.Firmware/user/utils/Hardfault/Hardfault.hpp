@@ -6,8 +6,6 @@
 extern "C" {
 #endif
 
-#define DEBUG 1
-
 /*********************************************************************
 * (c) SEGGER Microcontroller GmbH & Co. KG *
 * The Embedded Experts *
@@ -41,14 +39,7 @@ friendly analysis of hard faults in debug configurations.
 #define NVIC_BFAR   (*(volatile unsigned int *)(0xE000ED38u))
 // Auxiliary Fault Status Register
 #define NVIC_AFSR   (*(volatile unsigned int *)(0xE000ED3Cu))
-#ifndef DEBUG     // Should be overwritten by project settings
-#define DEBUG (0) // in debug builds
-#endif
-
 // Static data
-
-#if DEBUG
-static volatile unsigned int _Continue; // Set this variable to 1 to run further
 
 static struct {
     struct {
@@ -176,8 +167,6 @@ static struct {
                                 // (0xE000ED3C) Vendor controlled (optional)
 } HardFaultRegs;
 
-#endif
-
 /*********************************************************************
  *
  * Global functions
@@ -191,7 +180,8 @@ static struct {
  * Function description
  * Generic hardfault handler
  */
-void HardFault_Handler(unsigned int *pStack);
+void HardFault_Handler(void);
+[[noreturn]] void HardFault_HandlerC(unsigned int *pStack);
 
 #ifdef __cplusplus
 }

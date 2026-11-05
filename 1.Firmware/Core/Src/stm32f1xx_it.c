@@ -22,6 +22,7 @@
 #include "stm32f1xx_it.h"
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+extern void notifyWgsExternalPointTriggerFromIsr(void);
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -157,7 +158,12 @@ void DebugMon_Handler(void)
 void EXTI0_IRQHandler(void)
 {
   /* USER CODE BEGIN EXTI0_IRQn 0 */
-
+  if (__HAL_GPIO_EXTI_GET_IT(EXT_PULSE_IN_Pin) != RESET)
+  {
+    __HAL_GPIO_EXTI_CLEAR_IT(EXT_PULSE_IN_Pin);
+    notifyWgsExternalPointTriggerFromIsr();
+  }
+  return;
   /* USER CODE END EXTI0_IRQn 0 */
   HAL_GPIO_EXTI_IRQHandler(EXT_PULSE_IN_Pin);
   /* USER CODE BEGIN EXTI0_IRQn 1 */

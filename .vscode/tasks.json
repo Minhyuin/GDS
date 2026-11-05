@@ -2,93 +2,78 @@
   "version": "2.0.0",
   "tasks": [
     {
+      "label": "configure",
       "type": "shell",
+      "command": "cmake -B build -G Ninja",
+      "options": {
+        "cwd": "${workspaceFolder}/1.Firmware"
+      },
+      "detail": "配置",
+      "problemMatcher": []
+    },
+    {
       "label": "build",
-      "dependsOn": [
-        "cmake"
-      ],
-      "command": "ninja -C 'build' ",
-      "args": [],
+      "type": "shell",
+      "command": "ninja -C build",
       "options": {
         "cwd": "${workspaceFolder}/1.Firmware"
       },
-      "detail": "make...",
+      "detail": "编译",
       "problemMatcher": []
     },
     {
-      "type": "shell",
-      "label": "cmake",
-      "command": " cmake -B 'build' -G 'Ninja' ",
-      "options": {
-        "cwd": "${workspaceFolder}/1.Firmware"
-      },
-      "problemMatcher": []
-    },
-    {
-      "label": "jlinkserver",
-      "type": "shell",
-      "command": "JLinkGDBServer -singlerun  -if swd -port 50000 -swoport 50001 -telnetport 50002 -device stm32f103ze -rtttelnetport 19021",
+      "label": "configure + build",
       "dependsOn": [
+        "configure",
         "build"
       ],
-      "isBackground": true,
-      "presentation": {
-        "echo": true,
-        "reveal": "never",
-        "focus": false,
-        "panel": "dedicated"
-      },
-      "problemMatcher": [
-        {
-          "pattern": [
-            {
-              "regexp": ".",
-              "file": 1,
-              "line": 1,
-              "column": 1,
-              "message": 1
-            }
-          ],
-         "background": {
-            "activeOnStart": true,
-            "beginsPattern": { "regexp": "." },
-            "endsPattern": { "regexp": "^.*$" }
-          }
-        }
-      ]
+      "dependsOrder": "sequence",
+      "problemMatcher": []
     },
     {
-      "label": "open-RTT",
+      "label": "flash: jlink",
       "type": "shell",
-       "dependsOn": [
-        "jlinkserver"
-      ],
-      "command": "JLinkRTTClient",
-      "isBackground": true,
-      "presentation": {
-        "echo": true,
-        "reveal": "always",
-        "focus": true,
-        "panel": "dedicated"
+      "command": "python tools/script/devtool.py flash jlink",
+      "options": {
+        "cwd": "${workspaceFolder}/1.Firmware"
       },
-     "problemMatcher": [
-        {
-          "pattern": [
-            {
-              "regexp": ".",
-              "file": 1,
-              "line": 1,
-              "column": 1,
-              "message": 1
-            }
-          ],
-         "background": {
-            "activeOnStart": true,
-            "beginsPattern": { "regexp": "." },
-            "endsPattern": { "regexp": "^.*$" }
-          }
-        }
-      ]
+      "detail": "烧录 (J-Link / SEGGER) 并复位运行",
+      "presentation": {
+        "group": "flash",
+        "reveal": "always",
+        "clear": true
+      },
+      "problemMatcher": []
     },
+    {
+      "label": "flash: stlink",
+      "type": "shell",
+      "command": "python tools/script/devtool.py flash stlink",
+      "options": {
+        "cwd": "${workspaceFolder}/1.Firmware"
+      },
+      "detail": "烧录 (ST-Link / OpenOCD) 并复位运行",
+      "presentation": {
+        "group": "flash",
+        "reveal": "always",
+        "clear": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "flash: daplink",
+      "type": "shell",
+      "command": "python tools/script/devtool.py flash daplink",
+      "options": {
+        "cwd": "${workspaceFolder}/1.Firmware"
+      },
+      "detail": "烧录 (DAP-Link / OpenOCD) 并复位运行",
+      "presentation": {
+        "group": "flash",
+        "reveal": "always",
+        "clear": true
+      },
+      "problemMatcher": []
+    }
   ]
 }

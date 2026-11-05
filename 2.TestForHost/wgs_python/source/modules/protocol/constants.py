@@ -50,22 +50,25 @@ class Channel(IntEnum):
 
 
 class AckStatus(IntEnum):
-    IDLE = 0x00
+    ACCEPTED = 0x00
     DONE = 0x01
     BUSY = 0x02
-    ERROR = 0x03
+    ERROR = 0x80
 
 
 class ErrorCode(IntEnum):
     NONE = 0x00
-    BAD_FRAME = 0x01
-    BAD_COMMAND = 0x02
-    BAD_LENGTH = 0x03
+    CRC_ERROR = 0x01
+    BAD_LENGTH = 0x02
+    UNSUPPORTED_COMMAND = 0x03
     INVALID_STATE = 0x04
     OUT_OF_RANGE = 0x05
-    UNSUPPORTED_COMMAND = 0x06
-    CRC_ERROR = 0x07
-    TRANSPORT_BUSY = 0x08
+    BUFFER_FULL = 0x06
+    BAD_OFFSET = 0x07
+    WAVE_CRC_MISMATCH = 0x08
+    DMA_BUSY = 0x09
+    UNDERRUN = 0x0A
+    TRANSPORT_BUSY = 0x0B
 
 
 def normalize_channel(channel):

@@ -155,7 +155,7 @@ void DebugMon_Handler(void)
 /**
   * @brief This function handles EXTI line0 interrupt.
   */
-void EXTI0_IRQHandler(void)
+__attribute__((weak)) void EXTI0_IRQHandler(void)
 {
   /* USER CODE BEGIN EXTI0_IRQn 0 */
   if (__HAL_GPIO_EXTI_GET_IT(EXT_PULSE_IN_Pin) != RESET)

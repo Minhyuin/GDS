@@ -27,6 +27,7 @@ CASES = [
     "active_length",
     "invalid_input",
     "fifo_capacity",
+    "gpio_fifo",
     "repeat_start",
     "other_channel",
     "running_frequency",

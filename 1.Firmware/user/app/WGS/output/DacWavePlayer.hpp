@@ -515,36 +515,23 @@ public:
     return APP::WGS::PROTOCOL::Result_s::success();
   }
 
-  void firePendingPointPulseFromIsr() {
-    if (firePoint2FifoFromIsr()) {
+  __attribute__((always_inline)) void firePendingPointPulseFromIsr() {
+    // Tasks publish pending under PRIMASK; they cannot mutate it during EXTI.
+    // Completion IRQs have the same priority, so they cannot preempt this path.
+    const uint8_t mask = pendingPointPulseMask_;
+    if (mask != POINT_PULSE_NONE) {
+      if (mask == POINT_PULSE_BOTH) {
+        DMAch1Hardware::raiseArmedAckFromIsr();
+        DMAch2Hardware::raiseArmedAckFromIsr();
+      } else if (mask == POINT_PULSE_CH1) {
+        DMAch1Hardware::raiseArmedAckFromIsr();
+      } else {
+        DMAch2Hardware::raiseArmedAckFromIsr();
+      }
+      finishArmedPointPulseFromIsr(mask);
       return;
     }
-    if (firePointFifoFromIsr()) {
-      return;
-    }
-
-    uint8_t mask = POINT_PULSE_NONE;
-
-    const auto irqState = __get_PRIMASK();
-    __disable_irq();
-    if (pendingPointPulseMask_ != POINT_PULSE_NONE &&
-        firingPointPulseMask_ == POINT_PULSE_NONE) {
-      mask = pendingPointPulseMask_;
-      pendingPointPulseMask_ = POINT_PULSE_NONE;
-      firingPointPulseMask_ = mask;
-    }
-    if (irqState == 0U) {
-      __enable_irq();
-    }
-
-    if ((mask & POINT_PULSE_CH1) != 0U &&
-        DMAch1Hardware::firePreparedSinglePulseFromIsr() != HAL_OK) {
-      clearFiringPointPulseMask(POINT_PULSE_CH1);
-    }
-    if ((mask & POINT_PULSE_CH2) != 0U &&
-        DMAch2Hardware::firePreparedSinglePulseFromIsr() != HAL_OK) {
-      clearFiringPointPulseMask(POINT_PULSE_CH2);
-    }
+    fireFifoPointPulseFromIsr();
   }
 
   void completePointPulseFromIsr(OutputChannel_e _channel) {
@@ -710,6 +697,24 @@ private:
     cancelPointPulse(POINT_PULSE_BOTH);
     pendingPointPulseMask_ = POINT_PULSE_NONE;
     firingPointPulseMask_ = POINT_PULSE_NONE;
+  }
+
+  // Run after the rising edges, keeping register saves out of the fast entry.
+  __attribute__((noinline)) void finishArmedPointPulseFromIsr(uint8_t _mask) {
+    pendingPointPulseMask_ = POINT_PULSE_NONE;
+    firingPointPulseMask_ = _mask;
+    if ((_mask & POINT_PULSE_CH1) != 0U) {
+      DMAch1Hardware::startArmedPulseTimerFromIsr();
+    }
+    if ((_mask & POINT_PULSE_CH2) != 0U) {
+      DMAch2Hardware::startArmedPulseTimerFromIsr();
+    }
+  }
+
+  __attribute__((noinline)) void fireFifoPointPulseFromIsr() {
+    if (!firePoint2FifoFromIsr()) {
+      firePointFifoFromIsr();
+    }
   }
 
   bool popPointFifoFromIsr(APP::WGS::PROTOCOL::PointFifoPoint_s &_point) {

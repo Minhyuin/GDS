@@ -9,6 +9,8 @@ namespace BSP {
 class Tim4HandleProvider {
 public:
   static TIM_HandleTypeDef &handle();
+  static GPIO_TypeDef *ackPort() { return GPIOD; }
+  static constexpr uint32_t ACK_PINS = GPIO_PIN_12 | GPIO_PIN_13;
   static constexpr uint32_t ACK_CHANNEL_1 = TIM_CHANNEL_1;
   static constexpr uint32_t ACK_CHANNEL_2 = TIM_CHANNEL_2;
 };
@@ -16,6 +18,8 @@ public:
 class Tim5HandleProvider {
 public:
   static TIM_HandleTypeDef &handle();
+  static GPIO_TypeDef *ackPort() { return GPIOA; }
+  static constexpr uint32_t ACK_PINS = GPIO_PIN_2 | GPIO_PIN_3;
   static constexpr uint32_t ACK_CHANNEL_1 = TIM_CHANNEL_3;
   static constexpr uint32_t ACK_CHANNEL_2 = TIM_CHANNEL_4;
 };
@@ -32,6 +36,7 @@ public:
   }
 
   static HAL_StatusTypeDef startContinuous() {
+    configureAckPins(GPIO_MODE_AF_PP);
     disableUpdateInterrupt();
     timer().Instance->CR1 &= ~TIM_CR1_OPM;
     setAckPulseTicks(ackPulseTicksForPeriod(currentPeriodTicks()));
@@ -42,6 +47,7 @@ public:
   }
 
   static HAL_StatusTypeDef stop() {
+    HandleProvider::ackPort()->BSRR = HandleProvider::ACK_PINS << 16U;
     disableUpdateInterrupt();
     stopAckPwm();
     return HAL_TIM_Base_Stop(&timer());
@@ -58,6 +64,7 @@ public:
       return status;
     }
 
+    configureAckPins(GPIO_MODE_OUTPUT_PP);
     singlePulseRestoreConfig_ = savedConfig;
     singlePulsePrepared_ = true;
     singlePulseFiring_ = false;
@@ -78,11 +85,23 @@ public:
       return HAL_ERROR;
     }
 
-    auto *registers = singlePulseRegisters_;
-    singlePulseFiring_ = true;
-    registers->CCER = singlePulseOutputEnable_;
-    registers->CR1 |= TIM_CR1_CEN;
+    fireArmedSinglePulseFromIsr();
     return HAL_OK;
+  }
+
+  // Caller owns an armed point: preparation succeeded and no pulse is firing.
+  __attribute__((always_inline)) static void fireArmedSinglePulseFromIsr() {
+    raiseArmedAckFromIsr();
+    startArmedPulseTimerFromIsr();
+  }
+
+  __attribute__((always_inline)) static void raiseArmedAckFromIsr() {
+    HandleProvider::ackPort()->BSRR = HandleProvider::ACK_PINS;
+  }
+
+  __attribute__((always_inline)) static void startArmedPulseTimerFromIsr() {
+    singlePulseFiring_ = true;
+    singlePulseRegisters_->CR1 = singlePulseStartControl_;
   }
 
   static bool completePreparedSinglePulseFromIsr(bool _keepPrepared = false) {
@@ -92,6 +111,7 @@ public:
       return false;
     }
 
+    HandleProvider::ackPort()->BSRR = HandleProvider::ACK_PINS << 16U;
     disableUpdateInterrupt();
     clearUpdateFlag();
     stopAckPwm();
@@ -177,11 +197,6 @@ private:
     timer().Instance->CCER |= channelEnableBit(HandleProvider::ACK_CHANNEL_2);
   }
 
-  static void enableAckPwmOutputsTogether() {
-    timer().Instance->CCER |= channelEnableBit(HandleProvider::ACK_CHANNEL_1) |
-                              channelEnableBit(HandleProvider::ACK_CHANNEL_2);
-  }
-
   static HAL_StatusTypeDef stopAckPwm() {
     timer().Instance->CCER &= ~channelEnableBit(HandleProvider::ACK_CHANNEL_1);
     timer().Instance->CCER &= ~channelEnableBit(HandleProvider::ACK_CHANNEL_2);
@@ -211,24 +226,30 @@ private:
     uint32_t compare1{0U};
     uint32_t compare2{0U};
     uint32_t counter{0U};
-    uint32_t captureCompareMode1{0U};
-    uint32_t captureCompareMode2{0U};
   };
 
   static inline TimerConfig_s singlePulseRestoreConfig_{};
   static inline bool singlePulsePrepared_{false};
   static inline bool singlePulseFiring_{false};
   static inline TIM_TypeDef *singlePulseRegisters_{};
-  static inline uint32_t singlePulseOutputEnable_{};
+  static inline uint32_t singlePulseStartControl_{};
+
+  static void configureAckPins(uint32_t _mode) {
+    auto *port = HandleProvider::ackPort();
+    // Preload the low latch before changing pin ownership.
+    port->BSRR = HandleProvider::ACK_PINS << 16U;
+    GPIO_InitTypeDef config{};
+    config.Pin = HandleProvider::ACK_PINS;
+    config.Mode = _mode;
+    config.Pull = GPIO_NOPULL;
+    config.Speed = GPIO_SPEED_FREQ_HIGH;
+    HAL_GPIO_Init(port, &config);
+  }
 
   static void preparePulseStart() {
     auto &handle = timer();
     singlePulseRegisters_ = handle.Instance;
-    // Keep outputs disabled until the external trigger; cache the enable value.
-    singlePulseOutputEnable_ =
-        singlePulseRegisters_->CCER |
-        channelEnableBit(HandleProvider::ACK_CHANNEL_1) |
-        channelEnableBit(HandleProvider::ACK_CHANNEL_2);
+    singlePulseStartControl_ = singlePulseRegisters_->CR1 | TIM_CR1_CEN;
     handle.State = HAL_TIM_STATE_BUSY;
     singlePulseRegisters_->SR = ~TIM_FLAG_UPDATE;
     singlePulseRegisters_->DIER |= TIM_DIER_UIE;
@@ -243,14 +264,10 @@ private:
         .compare1 = compareValue(HandleProvider::ACK_CHANNEL_1),
         .compare2 = compareValue(HandleProvider::ACK_CHANNEL_2),
         .counter = __HAL_TIM_GET_COUNTER(&timer()),
-        .captureCompareMode1 = timer().Instance->CCMR1,
-        .captureCompareMode2 = timer().Instance->CCMR2,
     };
   }
 
   static void restoreConfig(const TimerConfig_s &_config) {
-    timer().Instance->CCMR1 = _config.captureCompareMode1;
-    timer().Instance->CCMR2 = _config.captureCompareMode2;
     __HAL_TIM_SET_PRESCALER(&timer(), _config.prescaler);
     __HAL_TIM_SET_AUTORELOAD(&timer(), _config.autoReload);
     setCompareValue(HandleProvider::ACK_CHANNEL_1, _config.compare1);
@@ -296,24 +313,13 @@ private:
       return HAL_ERROR;
     }
 
-    // PWM2 stays low at CNT=0, rises at 1, and falls at overflow.
-    // OPM then stops at CNT=0: the falling edge never waits for the ISR.
-    auto *registers = timer().Instance;
-    auto &mode = HandleProvider::ACK_CHANNEL_1 == TIM_CHANNEL_1
-                     ? registers->CCMR1 : registers->CCMR2;
-    mode = (mode & ~(TIM_CCMR1_OC1M | TIM_CCMR1_OC2M)) |
-           TIM_OCMODE_PWM2 | (TIM_OCMODE_PWM2 << 8U);
+    // The timer only schedules GPIO ACK completion; PWM channels stay disabled.
     __HAL_TIM_SET_PRESCALER(&timer(), prescaler - 1U);
-    __HAL_TIM_SET_AUTORELOAD(&timer(), pulseTicks);
-    setAckPulseTicks(1U);
+    __HAL_TIM_SET_AUTORELOAD(&timer(), pulseTicks - 1U);
     return HAL_OK;
   }
 
   static void enableOnePulseMode() { timer().Instance->CR1 |= TIM_CR1_OPM; }
-
-  static void enableUpdateInterrupt() {
-    timer().Instance->DIER |= TIM_DIER_UIE;
-  }
 
   static void disableUpdateInterrupt() {
     timer().Instance->DIER &= ~TIM_DIER_UIE;

@@ -16,16 +16,22 @@ void require(bool b, const char *s) {
 struct T1 {
   static inline TIM_TypeDef reg;
   static inline TIM_HandleTypeDef h{&reg};
+  static inline GPIO_TypeDef gpio;
+  static GPIO_TypeDef *ackPort() { return &gpio; }
   static inline unsigned handleCalls{};
   static TIM_HandleTypeDef &handle() { ++handleCalls; return h; }
+  static constexpr uint32_t ACK_PINS = GPIO_PIN_12 | GPIO_PIN_13;
   static constexpr auto ACK_CHANNEL_1 = TIM_CHANNEL_1,
                         ACK_CHANNEL_2 = TIM_CHANNEL_2;
 };
 struct T2 {
   static inline TIM_TypeDef reg;
   static inline TIM_HandleTypeDef h{&reg};
+  static inline GPIO_TypeDef gpio;
+  static GPIO_TypeDef *ackPort() { return &gpio; }
   static inline unsigned handleCalls{};
   static TIM_HandleTypeDef &handle() { ++handleCalls; return h; }
+  static constexpr uint32_t ACK_PINS = GPIO_PIN_2 | GPIO_PIN_3;
   static constexpr auto ACK_CHANNEL_1 = TIM_CHANNEL_3,
                         ACK_CHANNEL_2 = TIM_CHANNEL_4;
 };
@@ -56,46 +62,70 @@ struct Dac {
   }
   static HAL_StatusTypeDef startDac(uint32_t) { return HAL_OK; }
 };
-// Compare output persists when OPM clears CEN; deliberately delay the ISR.
-template <typename Timer, typename Provider> void checkSinglePulseEdges() {
+// A point ACK is a GPIO latch: timer overflow cannot lower it before the ISR.
+template <typename Timer, typename Provider> void checkGpioPulseLifecycle() {
+  Provider::gpio.timer = &Provider::reg;
+  constexpr auto pins = Provider::ACK_PINS;
+  const unsigned pin = pins == 0x3000 ? 12 : 2;
+  auto mode = [&] { return ((pin < 8 ? Provider::gpio.CRL : Provider::gpio.CRH)
+                           >> ((pin % 8) * 4)) & 15U; };
+  Provider::gpio.ODR = pins | 1U;
+  Provider::gpio.CRL = Provider::gpio.CRH = 0x44444444;
   for (float width : {1.f, 40.f, 910.2083f, 1000000.f}) {
     auto saved1 = Provider::reg.CCMR1, saved2 = Provider::reg.CCMR2;
     require(Timer::prepareSinglePulse(width) == HAL_OK, "pulse prepare failed");
     for (int repeat = 0; repeat < 2; ++repeat) {
-      require(!(Provider::reg.CR1 & TIM_CR1_CEN), "prepared pulse started early");
+      require(mode() == 3, "point ACK pins are not push-pull GPIO");
+      const unsigned otherPin = pin + 1;
+      const auto modeReg = pin < 8 ? Provider::gpio.CRL : Provider::gpio.CRH;
+      require(((modeReg >> ((otherPin % 8) * 4)) & 15U) == 3,
+              "second ACK pin not configured as GPIO");
+      require((modeReg & 15U) == 4, "pin switch changed unrelated GPIO mode");
+      const double timerTicks = (Provider::reg.ARR + 1U) * (Provider::reg.PSC + 1U);
+      require(std::abs(timerTicks - width * 72.0) <= Provider::reg.PSC + 1U,
+              "end timer differs by more than one prescaled tick");
+      require(!(Provider::gpio.ODR & pins), "prepared ACK is high");
+      require(!(Provider::reg.CR1 & TIM_CR1_CEN), "prepared timer started early");
       require((Provider::reg.CCER & 0x1111U) == 0,
-              "prepared pulse enabled outputs before external trigger");
-      const auto handleCalls = Provider::handleCalls;
+              "point ACK still enables PWM outputs");
+      const auto calls = Provider::handleCalls;
       require(Timer::firePreparedSinglePulseFromIsr() == HAL_OK, "pulse fire failed");
-      require(Provider::handleCalls == handleCalls,
-              "trigger path still resolves timer handle instead of prepared registers");
-      const auto channel = Provider::ACK_CHANNEL_1;
-      const auto ccmr = channel < TIM_CHANNEL_3 ? Provider::reg.CCMR1 : Provider::reg.CCMR2;
-      const auto shift = channel == TIM_CHANNEL_1 || channel == TIM_CHANNEL_3 ? 0 : 8;
-      const auto mode = (ccmr >> shift) & 0x70;
-      const auto ccr = compare(&Provider::h, channel);
-      auto high = [&](uint32_t cnt) { return mode == TIM_OCMODE_PWM2 ? cnt >= ccr : cnt < ccr; };
-      unsigned rises = 0, falls = 0, highTicks = 0;
-      bool previous = false;
-      for (uint32_t t = 0; t <= Provider::reg.ARR + 1001; ++t) {
-        const auto cnt = t <= Provider::reg.ARR ? t : 0;
-        bool value = high(cnt);
-        rises += value && !previous;
-        falls += !value && previous;
-        if (t <= Provider::reg.ARR) highTicks += value;
-        previous = value;
-      }
-      require(rises == 1 && falls == 1 && !previous,
-              "ACK rises again at overflow before completion ISR");
-      require(highTicks == Provider::reg.ARR, "single pulse high width changed");
+      require(Provider::handleCalls == calls, "trigger resolves timer handle");
+      require((Provider::gpio.ODR & pins) == pins, "trigger did not raise ACK GPIO");
+      require(Provider::gpio.riseBeforeTimer, "ACK rose after timer start");
+      require(Provider::reg.CR1 & TIM_CR1_CEN, "pulse end timer not started");
       Provider::reg.CNT = 0;
-      Provider::reg.CR1 &= ~TIM_CR1_CEN; // OPM clears CEN on hardware overflow.
-      Timer::completePreparedSinglePulseFromIsr(true);
+      Provider::reg.CR1 &= ~TIM_CR1_CEN;
+      require((Provider::gpio.ODR & pins) == pins,
+              "GPIO ACK should remain high until completion IRQ");
+      require(Timer::firePreparedSinglePulseFromIsr() == HAL_ERROR,
+              "duplicate trigger accepted while firing");
+      require(Timer::completePreparedSinglePulseFromIsr(true), "pulse completion failed");
+      require(!(Provider::gpio.ODR & pins), "completion did not lower ACK");
+      require(mode() == 3, "FIFO repeat left GPIO mode");
     }
+    Timer::firePreparedSinglePulseFromIsr();
     Timer::cancelPreparedSinglePulse();
+    require(!(Provider::gpio.ODR & pins), "cancel left ACK high");
+    require((Provider::gpio.ODR & 1U) != 0, "ACK write changed unrelated GPIO");
+    require(!Timer::completePreparedSinglePulseFromIsr(), "cancel left firing state");
     require(Provider::reg.CCMR1 == saved1 && Provider::reg.CCMR2 == saved2,
-            "point mode did not restore continuous PWM mode");
+            "point mode did not restore timer configuration");
+    require(Timer::startContinuous() == HAL_OK, "continuous restart failed");
+    require(mode() == 11, "continuous ACK did not restore alternate-function mode");
+    Timer::stopContinuous();
   }
+  require(Timer::prepareSinglePulse(40) == HAL_OK, "pulse prepare failed");
+  Timer::cancelPreparedSinglePulse();
+  require(!(Provider::gpio.ODR & pins), "armed cancellation left ACK high");
+  require(Timer::prepareSinglePulse(40) == HAL_OK, "pulse reprepare failed");
+  Timer::firePreparedSinglePulseFromIsr();
+  Provider::reg.CR1 &= ~TIM_CR1_CEN;
+  Timer::completePreparedSinglePulseFromIsr(false);
+  require(!(Provider::gpio.ODR & pins), "single-shot completion left ACK high");
+  require(Timer::startContinuous() == HAL_OK && mode() == 11,
+          "single-shot completion broke continuous mode");
+  Timer::stopContinuous();
 }
 using namespace APP::WGS;
 using namespace APP::WGS::OUTPUT;
@@ -118,8 +148,8 @@ int main(int, char **argv) {
       }
     }
     if (name == "cancel") {
-      checkSinglePulseEdges<Timer1, T1>();
-      checkSinglePulseEdges<Timer2, T2>();
+      checkGpioPulseLifecycle<Timer1, T1>();
+      checkGpioPulseLifecycle<Timer2, T2>();
       T1::reg.PSC = 9;
       Timer1::prepareSinglePulse(1000);
       Timer1::firePreparedSinglePulseFromIsr();
@@ -246,6 +276,60 @@ int main(int, char **argv) {
       require(!p.setPointPulseWidth(INFINITY).ok(), "infinite pulse accepted");
       require(!p.replaceSequence(OutputChannel_e::CH1, {}, s).ok(),
               "empty sequence accepted");
+    }
+    if (name == "gpio_fifo") {
+      Player p;
+      WaveformStore s;
+      p.start(s);
+      T1::gpio.timer = &T1::reg;
+      T2::gpio.timer = &T2::reg;
+      auto complete = [&] {
+        T1::reg.CR1 &= ~TIM_CR1_CEN;
+        T2::reg.CR1 &= ~TIM_CR1_CEN;
+        p.completePointPulseFromIsr(OutputChannel_e::CH1);
+        p.completePointPulseFromIsr(OutputChannel_e::CH2);
+      };
+      PROTOCOL::PointFifoPoint_s one{{123}};
+      require(p.appendPointFifo(OutputChannel_e::CH1, {&one, 1}).ok(), "append point");
+      require(p.startPointFifo(OutputChannel_e::CH1).ok(), "start point FIFO");
+      T1::gpio.onRise = [] { require(Dac::values[0] == 123, "ACK preceded FIFO DAC update"); };
+      p.firePendingPointPulseFromIsr();
+      require((T1::gpio.ODR & T1::ACK_PINS) == T1::ACK_PINS, "FIFO ACK not high");
+      require(!(T2::gpio.ODR & T2::ACK_PINS), "single FIFO fired other ACK");
+      complete();
+      p.firePendingPointPulseFromIsr();
+      require(!(T1::gpio.ODR & T1::ACK_PINS), "empty FIFO emitted ACK");
+      p.stopPointFifo(OutputChannel_e::CH1);
+      T1::gpio.onRise = nullptr;
+      PROTOCOL::Point2FifoPoint_s both{{456}, {789}};
+      require(p.appendPoint2Fifo({&both, 1}).ok(), "append dual point");
+      require(p.startPoint2Fifo().ok(), "start dual FIFO");
+      T1::gpio.onRise = T2::gpio.onRise = [] {
+        require(Dac::values[0] == 456 && Dac::values[1] == 789,
+                "dual ACK preceded both DAC writes");
+      };
+      p.firePendingPointPulseFromIsr();
+      require((T1::gpio.ODR & T1::ACK_PINS) && (T2::gpio.ODR & T2::ACK_PINS), "dual ACK not high");
+      require(p.stopPoint2Fifo().ok(), "cancel firing FIFO");
+      require(!(T1::gpio.ODR & T1::ACK_PINS) && !(T2::gpio.ODR & T2::ACK_PINS), "cancel left ACK high");
+      T1::gpio.onRise = T2::gpio.onRise = nullptr;
+      require(p.holdChannels(100, 200, 40).ok(), "ordinary point after FIFO");
+      T2::gpio.onRise = [] {
+        require(!(T1::reg.CR1 & TIM_CR1_CEN),
+                "second ordinary ACK rose after first timer start");
+      };
+      require(!(T1::gpio.ODR & T1::ACK_PINS), "ordinary point raised ACK before EXTI");
+      const auto disableCalls = irqDisableCalls;
+      p.firePendingPointPulseFromIsr();
+      require(irqDisableCalls == disableCalls,
+              "ordinary point ISR still globally masks interrupts");
+      require(p.holdChannels(300, 400, 40).isBusy(), "busy update changed result");
+      require((T1::gpio.ODR & T1::ACK_PINS) && (T2::gpio.ODR & T2::ACK_PINS), "busy update truncated ACK");
+      complete();
+      T2::gpio.onRise = nullptr;
+      require(!p.isPointPulseBusy(), "completion left point busy");
+      p.firePendingPointPulseFromIsr();
+      require(!(T1::gpio.ODR & T1::ACK_PINS) && !(T2::gpio.ODR & T2::ACK_PINS), "unarmed EXTI emitted ACK");
     }
     if (name == "fifo_capacity") {
       Player p;

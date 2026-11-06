@@ -75,11 +75,17 @@ def test_tim_proxy_has_nonblocking_prepared_one_pulse_path():
     assert_contains(proxy, "firePreparedSinglePulseFromIsr", "EXTI ISR should only start prepared pulse")
     assert_contains(proxy, "completePreparedSinglePulseFromIsr", "TIM IRQ should clean prepared pulse")
     assert_contains(proxy, "disableUpdateInterrupt", "sequence mode should keep TIM update IRQ disabled")
-    assert_contains(proxy, "enableUpdateInterrupt", "point firing should briefly enable TIM update IRQ")
+    assert_contains(proxy, "singlePulseRegisters_->DIER |= TIM_DIER_UIE", "prepared GPIO ACK should arm the completion IRQ")
 
     fire_path = text_between(proxy, "static HAL_StatusTypeDef firePreparedSinglePulseFromIsr", "  static bool completePreparedSinglePulseFromIsr")
     assert_not_contains(fire_path, "waitForOnePulseComplete", "EXTI fire path should not busy-wait")
     assert_not_contains(fire_path, "HAL_TIM_Base_Start", "EXTI fire path should not call HAL start")
+    assert_order(fire_path, "raiseArmedAckFromIsr();", "startArmedPulseTimerFromIsr();",
+                 "GPIO ACK must rise before starting the end timer")
+    assert_not_contains(fire_path, "HAL_GPIO_Init", "pin modes must be prepared before EXTI")
+    completion = text_between(proxy, "static bool completePreparedSinglePulseFromIsr", "  static void cancelPreparedSinglePulse")
+    assert_contains(completion, "->BSRR = HandleProvider::ACK_PINS << 16U", "completion IRQ should lower GPIO ACK")
+    assert_contains(proxy, "configureAckPins(GPIO_MODE_OUTPUT_PP)", "point mode should select GPIO output")
 
     start_continuous = text_between(proxy, "static HAL_StatusTypeDef startContinuous", "  static HAL_StatusTypeDef stop()")
     assert_contains(start_continuous, "disableUpdateInterrupt", "sequence continuous mode should not produce TIM IRQs")
@@ -97,7 +103,7 @@ def test_exti_and_tim_callbacks_bridge_to_wgs_fast_path():
     assert_contains(wgs_hpp, "notifyWgsTim5UpdateFromIsr", "C bridge for TIM5 update")
     assert_contains(wgs_cc, "HAL_GPIO_EXTI_Callback", "GPIO EXTI callback should be implemented")
     assert_contains(wgs_cc, "EXT_PULSE_IN_Pin", "EXTI callback should filter EXT_PULSE_IN")
-    assert_contains(wgs_cc, "firePendingPointPulseFromIsr", "EXTI should fire pending point pulse")
+    assert_contains(wgs_hpp, "dacPlayer_.firePendingPointPulseFromIsr()", "EXTI should directly dispatch to the player")
     assert_contains(main_c, "notifyWgsTim4UpdateFromIsr", "TIM4 callback should reach WGS")
     assert_contains(main_c, "notifyWgsTim5UpdateFromIsr", "TIM5 callback should reach WGS")
 
@@ -148,7 +154,11 @@ def test_point2_fifo_protocol_and_external_trigger_path():
     assert_contains(player, "clearPoint2Fifo()", "STOP should clear queued FIFO points")
     assert_contains(player, "point2FifoEnabled_", "player should track FIFO enable state")
     assert_order(player, "firePoint2FifoFromIsr", "firePointFifoFromIsr", "POINT2 FIFO should take priority over POINT FIFO")
-    assert_order(player, "firePointFifoFromIsr", "uint8_t mask = POINT_PULSE_NONE", "POINT FIFO should be checked before legacy pending pulse")
+    fast_path = text_between(player, "void firePendingPointPulseFromIsr()", "  void completePointPulseFromIsr")
+    assert_order(fast_path, "pendingPointPulseMask_", "fireFifoPointPulseFromIsr()",
+                 "ordinary armed point should bypass FIFO checks")
+    assert_not_contains(fast_path, "__disable_irq", "EXTI should not mask interrupts again")
+    assert_contains(wgs_cc, 'section(".RamFunc")', "short EXTI entry should execute from SRAM")
 
     assert_contains(output_mode, "PointFifoClearCommand_s", "POINT FIFO clear dispatch")
     assert_contains(output_mode, "PointFifoAppendCommand_s", "POINT FIFO append dispatch")

@@ -134,10 +134,6 @@ void WGSManager::onDacDmaHalfCompleteFromIsr() {}
 
 void WGSManager::onDacDmaCompleteFromIsr() {}
 
-void WGSManager::onExternalPointTriggerFromIsr() {
-  output_.firePendingPointPulseFromIsr();
-}
-
 void WGSManager::onPointPulseTimerUpdateFromIsr(
     OUTPUT::OutputChannel_e _channel) {
   output_.completePointPulseFromIsr(_channel);
@@ -574,6 +570,17 @@ extern "C" void notifyWgsDacDmaHalfCompleteFromIsr() {
 extern "C" void notifyWgsDacDmaCompleteFromIsr() {
   if (APP::WGS::activeWgs != nullptr) {
     APP::WGS::activeWgs->onDacDmaCompleteFromIsr();
+  }
+}
+
+// The linker/startup already copies .RamFunc with .data. Keep the point edge
+// path in SRAM; the larger FIFO implementation remains in Flash.
+extern "C" __attribute__((section(".RamFunc"))) void EXTI0_IRQHandler() {
+  if (__HAL_GPIO_EXTI_GET_IT(EXT_PULSE_IN_Pin) != RESET) {
+    __HAL_GPIO_EXTI_CLEAR_IT(EXT_PULSE_IN_Pin);
+    if (APP::WGS::activeWgs != nullptr) {
+      APP::WGS::activeWgs->onExternalPointTriggerFromIsr();
+    }
   }
 }
 

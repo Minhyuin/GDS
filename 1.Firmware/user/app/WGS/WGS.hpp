@@ -27,7 +27,9 @@ public:
   void onRxErrorFromIsr();
   void onDacDmaHalfCompleteFromIsr();
   void onDacDmaCompleteFromIsr();
-  void onExternalPointTriggerFromIsr();
+  __attribute__((always_inline)) void onExternalPointTriggerFromIsr() {
+    dacPlayer_.firePendingPointPulseFromIsr();
+  }
   void onPointPulseTimerUpdateFromIsr(OUTPUT::OutputChannel_e _channel);
 
 private:
